@@ -253,6 +253,13 @@ select option{background:var(--solid);color:var(--ink)}
 .photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .photo-actions .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
 .li .with-thumb{display:flex;gap:10px;align-items:center;min-width:0}
+/* workout: extra exercises, timed sets */
+#w-addcard{display:flex;flex-direction:column;gap:10px}
+#w-addcard .btn.ghost,.ex .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
+button.chip{cursor:pointer;min-height:36px}
+.ex .sw{min-height:44px;margin-top:4px;font-size:.92rem}
+.ex .sw.on{color:var(--warn);font-variant-numeric:tabular-nums}
+.ex-actions{flex-wrap:wrap}
 /* food: warnings, changes, new foods */
 .alert{border-color:rgba(242,166,94,.45)}
 .alert h3{color:var(--warn)}

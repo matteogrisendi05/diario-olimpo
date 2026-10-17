@@ -47,7 +47,7 @@ const blockOf = date => BLOCKS.find(b => date >= b.from && date <= b.to) || (dat
 const planOf = (code, date) => blockOf(date)[code];
 const EX = Object.fromEntries(BLOCKS.flatMap(b => [...b.A.ex, ...b.B.ex]).reverse().map(e => [e.id, e]));
 const curPlan = () => planOf(draft.plan, draft.date);
-const curEx = id => curPlan().ex.find(e => e.id === id) || EX[id];
+const curEx = id => sessionEx().find(e => e.id === id) || exDef(id);
 const HEIGHT = 188;
 const BENCH_1RM = 80;
 
@@ -201,6 +201,7 @@ function renderDiary() {
 }
 function onData() {
   if (!dirty) { draft = buildDraft(draft ? draft.date : today(), draft ? draft.plan : defaultPlan(today())); renderWork(); }
+  else if ((draft.extra || []).length && !(document.activeElement && document.activeElement.closest("#w-list"))) renderWork();   // names of your own exercises arrive with the data
   else refreshHints();
   renderProg(); renderBody(); renderRun(); fillProfile(); renderToday();
   if (!$("v-arch").hidden) renderArch();
@@ -226,12 +227,28 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", flushPending);
 function flushPending() { if (saveTimer) flushSave(); if (pendingText) pendingText(); }
 
+/* ---------- your own exercises and how each one is measured (coll "profile", id "exercises") ---------- */
+// {list: [{id, n, mode}], modes: {exerciseId: "reps" | "time"}}. Kept for good, so an extra exercise is
+// remembered for the next sessions. A set is {kg, reps} or, for timed exercises (plank…), {kg, sec}.
+const TIME_LO = 30, TIME_HI = 60;
+const exLib = () => { const l = state.profile.find(x => x.id === "exercises") || {}; return { list: l.list || [], modes: l.modes || {} }; };
+function saveLib(mutate) { const l = JSON.parse(JSON.stringify(exLib())); mutate(l); put("profile", "exercises", l); }
+const customDef = c => ({ id: c.id, n: c.n, s: 3, lo: 8, hi: 12, inc: 2.5, rest: c.mode === "time" ? 60 : 90, start: 0, custom: true, cue: "Esercizio aggiunto da te, fuori scheda." });
+const exDef = id => EX[id] || customDef(exLib().list.find(c => c.id === id) || { id, n: id });
+const modeOf = id => exLib().modes[id] || (exLib().list.find(c => c.id === id) || {}).mode || "reps";
+const isTime = id => modeOf(id) === "time";
+// Seconds typed as "45" or "1:30".
+const parseSec = v => { const s = String(v || "").trim().replace(",", "."), m = /^(\d+):(\d{1,2})$/.exec(s); return m ? +m[1] * 60 + +m[2] : Math.round(num(s)); };
+const secStr = s => s >= 60 ? mmss(s) : String(s);
+const fmtSet = (x, t) => t ? `${+x.kg ? fk(+x.kg) + " kg · " : ""}${secStr(x.sec)}″` : `${fk(+x.kg || 0)}×${x.reps}`;
+
 /* ---------- logic ---------- */
 const sorted = () => [...state.sessions].sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
 function lastFor(exId, before) {
+  const t = isTime(exId);
   for (const s of sorted()) {
     if (s.date >= before) continue;
-    const sets = (s.sets && s.sets[exId] || []).filter(x => x.reps > 0);
+    const sets = (s.sets && s.sets[exId] || []).filter(x => t ? x.sec > 0 : x.reps > 0);
     if (sets.length) return { date: s.date, sets };
   }
   return null;
@@ -240,9 +257,12 @@ function suggest(ex, date) {
   const last = lastFor(ex.id, date);
   if (!last) return { kg: ex.start, first: true };
   const kg = Math.max(...last.sets.map(x => +x.kg || 0));
+  if (isTime(ex.id)) return { kg, up: last.sets.length >= ex.s && last.sets.every(x => x.sec >= TIME_HI), last, time: true };
   const hit = last.sets.length >= ex.s && last.sets.every(x => x.reps >= ex.hi);
   return { kg: hit ? r1(kg + ex.inc) : kg, up: hit, last };
 }
+// The exercises of the session on screen: the plan's (minus the ones taken out) plus the extra ones.
+const sessionEx = () => [...curPlan().ex.filter(e => !(draft.skip || []).includes(e.id)), ...(draft.extra || []).map(exDef)];
 const bodyweight = () => { const b = [...state.body].filter(x => x.weight).sort((a, b) => a.date < b.date ? 1 : -1)[0]; return b ? b.weight : 82; };
 const load = (ex, kg) => ex && ex.bw ? bodyweight() + kg : kg;
 const e1rm = (ex, kg, reps) => load(ex, kg) * (1 + reps / 30);
@@ -251,25 +271,27 @@ function defaultPlan(date) {
   if (wd === 4) return "A"; if (wd === 6) return "B";
   const l = sorted()[0]; return l && l.plan === "A" ? "B" : "A";
 }
+const newRows = (ex, date, n) => { const sg = suggest(ex, date); return Array.from({ length: n }, () => ({ kg: fk(sg.kg), reps: "", sec: "", done: false })); };
 function buildDraft(date, plan) {
   const saved = state.sessions.find(s => s.id === date + "-" + plan);
+  const extra = saved && saved.extra ? [...saved.extra] : [], skip = saved && saved.skip ? [...saved.skip] : [];
   const sets = {};
-  for (const ex of planOf(plan, date).ex) {
+  for (const ex of [...planOf(plan, date).ex, ...extra.map(exDef)]) {
     if (saved && saved.sets && saved.sets[ex.id]) {
-      sets[ex.id] = saved.sets[ex.id].map(x => ({ kg: fk(+x.kg || 0), reps: String(x.reps), done: true }));
-      while (sets[ex.id].length < ex.s) sets[ex.id].push({ kg: sets[ex.id][0].kg, reps: "", done: false });
-    } else {
-      const sg = suggest(ex, date);
-      sets[ex.id] = Array.from({ length: ex.s }, () => ({ kg: fk(sg.kg), reps: "", done: false }));
-    }
+      sets[ex.id] = saved.sets[ex.id].map(x => ({ kg: fk(+x.kg || 0), reps: x.reps != null ? String(x.reps) : "", sec: x.sec ? secStr(x.sec) : "", done: true }));
+      while (sets[ex.id].length < ex.s) sets[ex.id].push({ kg: sets[ex.id][0].kg, reps: "", sec: "", done: false });
+    } else sets[ex.id] = newRows(ex, date, ex.s);
   }
-  return { date, plan, sets };
+  return { date, plan, sets, extra, skip };
 }
 const keepDraft = () => lsSet("olimpo-draft", draft);
 function draftSets() {
   const out = {}; let n = 0;
-  for (const ex of curPlan().ex) {
-    const ok = draft.sets[ex.id].filter(x => x.done).map(x => ({ kg: isFinite(num(x.kg)) ? num(x.kg) : 0, reps: Math.round(num(x.reps)) })).filter(x => x.reps > 0);
+  for (const ex of sessionEx()) {
+    const t = isTime(ex.id), kg = x => isFinite(num(x.kg)) ? num(x.kg) : 0;
+    const ok = draft.sets[ex.id].filter(x => x.done)
+      .map(x => t ? { kg: kg(x), sec: parseSec(x.sec) } : { kg: kg(x), reps: Math.round(num(x.reps)) })
+      .filter(x => t ? x.sec > 0 : x.reps > 0);
     if (ok.length) { out[ex.id] = ok; n += ok.length; }
   }
   return { out, n };
@@ -284,7 +306,8 @@ function flushSave() {
   const id = draft.date + "-" + draft.plan;
   if (!n && !state.sessions.some(s => s.id === id)) return;
   if (!n) del("sessions", id);
-  else put("sessions", id, { date: draft.date, plan: draft.plan, block: blockOf(draft.date).n, sets: out, savedAt: new Date().toISOString() });
+  else put("sessions", id, { date: draft.date, plan: draft.plan, block: blockOf(draft.date).n, sets: out,
+    ...((draft.extra || []).length ? { extra: draft.extra } : {}), ...((draft.skip || []).length ? { skip: draft.skip } : {}), savedAt: new Date().toISOString() });
   msg(n ? `Salvato · ${n} serie` : "Seduta svuotata", "ok");
 }
 function msg(t, cls) { $("w-msg").textContent = t; $("w-msg").className = "savemsg" + (cls ? " " + cls : ""); }
@@ -292,37 +315,55 @@ function msg(t, cls) { $("w-msg").textContent = t; $("w-msg").className = "savem
 /* ---------- workout view ---------- */
 const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 function hintHtml(ex) {
-  const sg = suggest(ex, draft.date);
-  if (sg.first) return `<span class="chip start">Partenza consigliata: ${ex.bw && !sg.kg ? "corpo libero" : fk(sg.kg) + " kg"}</span>`;
-  const last = sg.last.sets.map(x => `${fk(+x.kg || 0)}×${x.reps}`).join(" · ");
+  const sg = suggest(ex, draft.date), t = isTime(ex.id);
+  if (sg.first) return `<span class="chip start">${t ? `Obiettivo: ${TIME_LO}–${TIME_HI}″ a serie` : ex.custom && !ex.start ? "Prima volta: scegli tu il carico" : `Partenza consigliata: ${ex.bw && !sg.kg ? "corpo libero" : fk(sg.kg) + " kg"}`}</span>`;
+  const last = sg.last.sets.map(x => fmtSet(x, t)).join(" · ");
+  if (t) return `<span class="chip">${ddmm(sg.last.date)}: ${last}</span>` + (sg.up ? `<span class="chip up">↑ Oltre ${TIME_HI}″: aggiungi peso o difficoltà</span>` : `<span class="chip">Punta a +5″ a serie</span>`);
   return `<span class="chip">${ddmm(sg.last.date)}: ${last}</span>` + (sg.up ? `<span class="chip up">↑ Sali a ${fk(sg.kg)} kg</span>` : `<span class="chip">Resta a ${fk(sg.kg)} kg, +1 rip.</span>`);
 }
 function exCard(ex) {
-  const rows = draft.sets[ex.id];
-  const done = rows.filter(x => x.done).length;
+  const rows = draft.sets[ex.id], t = isTime(ex.id), extra = (draft.extra || []).includes(ex.id);
+  const done = rows.filter(x => x.done).length, sw = stopwatch && stopwatch.ex === ex.id;
   return `<article class="ex${done >= ex.s ? " complete" : ""}" id="ex-${ex.id}">
-    <div class="ex-top"><div><h3>${esc(ex.n)}</h3><div class="target">${ex.s} × ${ex.lo}–${ex.hi} · recupero ${mmss(ex.rest)}</div></div><span class="cnt">${done}/${rows.length}</span></div>
+    <div class="ex-top"><div><h3>${esc(ex.n)}${extra ? ' <span class="new">extra</span>' : ""}</h3><div class="target">${ex.s} × ${t ? `${TIME_LO}–${TIME_HI}″` : `${ex.lo}–${ex.hi}`} · recupero ${mmss(ex.rest)}</div></div><span class="cnt">${done}/${rows.length}</span></div>
     <div class="chips" id="h-${ex.id}">${hintHtml(ex)}</div>
-    <details class="how"><summary>Come si fa</summary><p>${esc(ex.cue)}${ex.alt ? "<br>" + esc(ex.alt) : ""}</p></details>
+    ${ex.cue ? `<details class="how"><summary>Come si fa</summary><p>${esc(ex.cue)}${ex.alt ? "<br>" + esc(ex.alt) : ""}</p></details>` : ""}
     <div class="sets">
-      <div class="sethead"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
+      <div class="sethead"><span>#</span><span>kg</span><span>${t ? "secondi" : "rip."}</span><span></span></div>
       ${rows.map((x, i) => `<div class="set${x.done ? " done" : ""}">
         <span class="n">${i + 1}</span>
         <div class="step"><button data-step="-" data-ex="${ex.id}" data-i="${i}" aria-label="meno ${ex.inc} kg">−</button><input id="kg-${ex.id}-${i}" data-ex="${ex.id}" data-i="${i}" data-f="kg" inputmode="decimal" value="${esc(x.kg)}" aria-label="kg serie ${i + 1}"><button data-step="+" data-ex="${ex.id}" data-i="${i}" aria-label="più ${ex.inc} kg">+</button></div>
-        <div class="reps"><input id="rp-${ex.id}-${i}" data-ex="${ex.id}" data-i="${i}" data-f="reps" inputmode="numeric" value="${esc(x.reps)}" placeholder="${ex.lo}–${ex.hi}" aria-label="ripetizioni serie ${i + 1}"></div>
+        <div class="reps">${t
+          ? `<input id="sc-${ex.id}-${i}" data-ex="${ex.id}" data-i="${i}" data-f="sec" inputmode="numeric" value="${esc(x.sec || "")}" placeholder="${TIME_LO}–${TIME_HI}" aria-label="secondi serie ${i + 1}">`
+          : `<input id="rp-${ex.id}-${i}" data-ex="${ex.id}" data-i="${i}" data-f="reps" inputmode="numeric" value="${esc(x.reps)}" placeholder="${ex.lo}–${ex.hi}" aria-label="ripetizioni serie ${i + 1}">`}</div>
         <button class="chk" data-chk="${ex.id}" data-i="${i}" aria-label="Serie ${i + 1} fatta" aria-pressed="${x.done}">${CHECK}</button>
       </div>`).join("")}
     </div>
-    <div class="ex-actions"><button class="lnk" data-add="${ex.id}">+ Aggiungi serie</button>${rows.length > 1 ? `<button class="lnk danger" data-rm="${ex.id}">Togli serie</button>` : ""}</div>
+    ${t ? `<button class="btn ghost sw${sw ? " on" : ""}" data-sw="${ex.id}">${sw ? `■ Ferma · <span id="sw-t">${mmss(Math.floor((Date.now() - stopwatch.start) / 1000))}</span>` : `⏱ Cronometra la serie ${Math.min(rows.length, rows.filter(x => x.done).length + 1)}`}</button>` : ""}
+    <div class="ex-actions"><button class="lnk" data-add="${ex.id}">+ Serie</button>${rows.length > 1 ? `<button class="lnk danger" data-rm="${ex.id}">− Serie</button>` : ""}<button class="lnk" data-mode="${ex.id}">${t ? "Passa a kg × rip." : "Passa a tempo"}</button><button class="lnk danger" data-drop="${ex.id}">Togli</button></div>
   </article>`;
+}
+// Stopwatch for timed sets: it fills the seconds of the first set not done yet and ticks it.
+let stopwatch = null, swInt = null;
+function stopStopwatch(save) {
+  clearInterval(swInt);
+  const s = stopwatch; stopwatch = null; if (!s) return;
+  const ex = curEx(s.ex), rows = draft.sets[s.ex], i = rows.findIndex(x => !x.done);
+  const sec = Math.round((Date.now() - s.start) / 1000);
+  if (save && sec > 0 && i >= 0) {
+    rows[i].sec = secStr(sec); rows[i].done = true;
+    dirty = true; keepDraft(); scheduleSave();
+    startTimer(ex.rest, rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
+  }
+  rerenderCard(s.ex);
 }
 function renderHeader() {
   $("h-eyebrow").textContent = draft.date === today() ? "Oggi · " + longDate(draft.date) : longDate(draft.date);
 }
 function renderProgress() {
-  const all = curPlan().ex.reduce((a, ex) => a + draft.sets[ex.id].length, 0);
+  const all = sessionEx().reduce((a, ex) => a + draft.sets[ex.id].length, 0);
   const { out, n } = draftSets();
-  let vol = 0; for (const k in out) for (const x of out[k]) vol += load(EX[k], x.kg) * x.reps;
+  let vol = 0; for (const k in out) for (const x of out[k]) vol += load(EX[k], x.kg) * (x.reps || 0);
   const pct = all ? Math.min(1, n / all) : 0;
   $("w-bar").style.strokeDashoffset = String(175.9 * (1 - pct));
   $("w-pct").textContent = Math.round(pct * 100) + "%";
@@ -335,14 +376,15 @@ function renderWork() {
   $("w-b").setAttribute("aria-pressed", draft.plan === "B");
   $("w-date").value = draft.date;
   $("w-datelbl").textContent = draft.date === today() ? "Oggi" : longDate(draft.date);
-  $("w-dur").textContent = `${p.ex.length} esercizi · ${p.dur}`;
+  const list = sessionEx();
+  $("w-dur").textContent = `${list.length} esercizi · ${p.dur}`;
   const bk = blockOf(draft.date);
   $("w-note").textContent = `Blocco ${bk.n} · ${bk.name}. ${p.note}`;
-  $("w-list").innerHTML = p.ex.map(exCard).join("");
-  renderHeader(); renderProgress();
+  $("w-list").innerHTML = list.map(exCard).join("");
+  renderAddCard(); renderHeader(); renderProgress();
 }
-function rerenderCard(exId) { const el = $("ex-" + exId); const open = el && el.querySelector("details").open; if (el) { el.outerHTML = exCard(curEx(exId)); if (open) $("ex-" + exId).querySelector("details").open = true; } renderProgress(); }
-function refreshHints() { if (!draft) return; for (const ex of curPlan().ex) { const h = $("h-" + ex.id); if (h) h.innerHTML = hintHtml(ex); } }
+function rerenderCard(exId) { const el = $("ex-" + exId), d = el && el.querySelector("details"), open = d && d.open; if (el) { el.outerHTML = exCard(curEx(exId)); const nd = $("ex-" + exId).querySelector("details"); if (open && nd) nd.open = true; } renderProgress(); }
+function refreshHints() { if (!draft) return; for (const ex of sessionEx()) { const h = $("h-" + ex.id); if (h) h.innerHTML = hintHtml(ex); } }
 
 $("w-list").addEventListener("input", e => {
   const t = e.target; if (!t.dataset.f) return;
@@ -352,6 +394,26 @@ $("w-list").addEventListener("input", e => {
 });
 $("w-list").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.sw) {
+    if (stopwatch && stopwatch.ex === b.dataset.sw) return stopStopwatch(true);
+    if (stopwatch) stopStopwatch(false);
+    stopTimer(); stopwatch = { ex: b.dataset.sw, start: Date.now() };
+    swInt = setInterval(() => { const el = $("sw-t"); if (el && stopwatch) el.textContent = mmss(Math.floor((Date.now() - stopwatch.start) / 1000)); }, 250);
+    return rerenderCard(b.dataset.sw);
+  }
+  if (b.dataset.mode) {
+    const id = b.dataset.mode, next = isTime(id) ? "reps" : "time";
+    if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
+    saveLib(l => { l.modes[id] = next; const c = l.list.find(x => x.id === id); if (c) c.mode = next; });
+    dirty = true; keepDraft(); rerenderCard(id); scheduleSave(); return;
+  }
+  if (b.dataset.drop) {
+    const id = b.dataset.drop;
+    if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
+    if ((draft.extra || []).includes(id)) { draft.extra = draft.extra.filter(x => x !== id); delete draft.sets[id]; }
+    else draft.skip = [...(draft.skip || []), id];
+    dirty = true; keepDraft(); renderWork(); scheduleSave(); return;
+  }
   const exId = b.dataset.ex || b.dataset.chk || b.dataset.add || b.dataset.rm; if (!exId) return;
   const ex = curEx(exId), rows = draft.sets[exId];
   if (b.dataset.step) {
@@ -364,16 +426,48 @@ $("w-list").addEventListener("click", e => {
   if (b.dataset.chk) {
     const i = +b.dataset.i, row = rows[i];
     row.done = !row.done;
-    if (row.done && !(num(row.reps) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.reps = String(prev ? prev.reps : ex.lo); }
+    if (row.done && isTime(exId) && !(parseSec(row.sec) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.sec = secStr(prev ? prev.sec : TIME_LO); }
+    else if (row.done && !isTime(exId) && !(num(row.reps) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.reps = String(prev ? prev.reps : ex.lo); }
     dirty = true; keepDraft(); rerenderCard(exId); scheduleSave();
     if (row.done) startTimer(ex.rest, rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
     return;
   }
-  if (b.dataset.add) rows.push({ kg: rows.length ? rows[rows.length - 1].kg : fk(ex.start), reps: "", done: false });
+  if (b.dataset.add) rows.push({ kg: rows.length ? rows[rows.length - 1].kg : fk(ex.start), reps: "", sec: "", done: false });
   if (b.dataset.rm && rows.length > 1) rows.pop();
   dirty = true; keepDraft(); rerenderCard(exId); scheduleSave();
 });
-function switchTo(date, plan) { if (saveTimer) flushSave(); draft = buildDraft(date, plan); dirty = false; keepDraft(); renderWork(); msg(state.sessions.some(s => s.id === date + "-" + plan) ? "Seduta già salvata: puoi correggerla." : "Tocca ✓ alla fine di ogni serie: salvo tutto da solo."); }
+// Add an exercise to this session: one you used before (chips) or a new one (name + measure).
+const slug = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
+function addToSession(id) {
+  if (sessionEx().some(e => e.id === id)) { msg("Questo esercizio è già nella seduta.", "err"); return; }
+  if ((draft.skip || []).includes(id)) draft.skip = draft.skip.filter(x => x !== id);
+  else { draft.extra = [...(draft.extra || []), id]; if (!draft.sets[id]) draft.sets[id] = newRows(exDef(id), draft.date, 3); }
+  dirty = true; keepDraft(); renderWork(); scheduleSave();
+  const el = $("ex-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function renderAddCard() {
+  const inSession = new Set(sessionEx().map(e => e.id));
+  const mine = exLib().list.filter(c => !inSession.has(c.id));
+  const skipped = (draft.skip || []).map(exDef);
+  $("w-lib").innerHTML = [...skipped.map(e => `<button class="chip" data-addex="${e.id}">↺ ${esc(e.n)}</button>`),
+    ...mine.map(c => `<button class="chip" data-addex="${c.id}">+ ${esc(c.n)}${c.mode === "time" ? " ⏱" : ""}</button>`)].join("");
+  $("w-lib").hidden = !(mine.length || skipped.length);
+}
+$("w-lib").addEventListener("click", e => { const b = e.target.closest("button[data-addex]"); if (b) addToSession(b.dataset.addex); });
+$("w-new-add").addEventListener("click", () => {
+  const name = $("w-new-n").value.trim(), mode = $("w-new-m").value;
+  if (!name) { $("w-new-n").focus(); return; }
+  const fromPlan = Object.values(EX).find(e => e.n.toLowerCase() === name.toLowerCase());
+  let id = fromPlan ? fromPlan.id : null;
+  if (!id) {
+    const known = exLib().list.find(c => c.n.toLowerCase() === name.toLowerCase());
+    id = known ? known.id : "c_" + (slug(name) || Date.now().toString(36));
+    saveLib(l => { if (!l.list.some(c => c.id === id)) l.list.push({ id, n: name, mode }); l.modes[id] = mode; });
+  } else saveLib(l => { l.modes[id] = mode; });
+  $("w-new-n").value = "";
+  addToSession(id);
+});
+function switchTo(date, plan) { if (stopwatch) stopStopwatch(false); if (saveTimer) flushSave(); draft = buildDraft(date, plan); dirty = false; keepDraft(); renderWork(); msg(state.sessions.some(s => s.id === date + "-" + plan) ? "Seduta già salvata: puoi correggerla." : "Tocca ✓ alla fine di ogni serie: salvo tutto da solo."); }
 $("w-a").addEventListener("click", () => switchTo(draft.date, "A"));
 $("w-b").addEventListener("click", () => switchTo(draft.date, "B"));
 $("w-date").addEventListener("change", e => { if (e.target.value) switchTo(e.target.value, defaultPlan(e.target.value)); });
@@ -446,13 +540,14 @@ const isGymDay = d => { const wd = new Date(d + "T12:00:00").getDay(); return (w
 function gymDaysBetween(from, to) { let n = 0; for (let d = from; d <= to; d = shiftDate(d, 1)) if (isGymDay(d)) n++; return n; }
 
 /* ---------- progress view ---------- */
-const volumeOf = s => { let v = 0; for (const k in s.sets) for (const x of s.sets[k]) v += load(EX[k], +x.kg || 0) * x.reps; return v; };
+const volumeOf = s => { let v = 0; for (const k in s.sets) for (const x of s.sets[k]) v += load(EX[k], +x.kg || 0) * (x.reps || 0); return v; };
 function bestOf(ex, sets) { let b = sets[0]; for (const x of sets) if (e1rm(ex, +x.kg || 0, x.reps) > e1rm(ex, +b.kg || 0, b.reps)) b = x; return b; }
 function renderProg() {
   const ss = sorted(), asc = [...ss].reverse();
   const cutoff = new Date(Date.now() - 28 * 864e5).toISOString().slice(0, 10);
   const expected = gymDaysBetween(shiftDate(today(), -27), today());
-  const pb = asc.filter(s => s.sets.panca && s.sets.panca.length).map(s => r1(e1rm(EX.panca, +bestOf(EX.panca, s.sets.panca).kg || 0, bestOf(EX.panca, s.sets.panca).reps)));
+  const pancaSets = s => (s.sets.panca || []).filter(x => x.reps > 0);
+  const pb = asc.filter(s => pancaSets(s).length).map(s => { const b = bestOf(EX.panca, pancaSets(s)); return r1(e1rm(EX.panca, +b.kg || 0, b.reps)); });
   const benchNow = pb.length ? pb[pb.length - 1] : BENCH_1RM;
   $("g-tiles").innerHTML = [
     ["Sedute", ss.length, "in totale"],
@@ -460,22 +555,24 @@ function renderProg() {
     ["Panca 1RM", fk(benchNow), pb.length ? (benchNow - BENCH_1RM >= 0 ? "+" : "") + fk(r1(benchNow - BENCH_1RM)) + " da 80" : "kg, di partenza"]
   ].map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
 
-  const sel = $("g-ex");
-  if (!sel.options.length) {
-    const seen = new Set();
-    sel.innerHTML = BLOCKS.slice(0, 2).map(b => `<optgroup label="Blocco ${b.n} · ${b.name}">${[...b.A.ex, ...b.B.ex].filter(e => !seen.has(e.id) && seen.add(e.id)).map(e => `<option value="${e.id}">${esc(e.n)}</option>`).join("")}</optgroup>`).join("");
-    sel.value = lsGet("olimpo-ex", "panca"); if (!sel.value) sel.value = "panca";
+  const sel = $("g-ex"), lib = exLib().list;
+  if (sel.options.length !== Object.keys(EX).length + lib.length) {
+    const seen = new Set(), keep = sel.value || lsGet("olimpo-ex", "panca");
+    sel.innerHTML = BLOCKS.slice(0, 2).map(b => `<optgroup label="Blocco ${b.n} · ${b.name}">${[...b.A.ex, ...b.B.ex].filter(e => !seen.has(e.id) && seen.add(e.id)).map(e => `<option value="${e.id}">${esc(e.n)}</option>`).join("")}</optgroup>`).join("")
+      + (lib.length ? `<optgroup label="I tuoi esercizi">${lib.map(c => `<option value="${c.id}">${esc(c.n)}</option>`).join("")}</optgroup>` : "");
+    sel.value = keep; if (!sel.value) sel.value = "panca";
   }
-  const ex = EX[sel.value], pts = [];
+  const ex = exDef(sel.value), t = isTime(ex.id), pts = [];
   for (const s of asc) {
-    const sets = (s.sets[ex.id] || []).filter(x => x.reps > 0); if (!sets.length) continue;
+    const sets = (s.sets[ex.id] || []).filter(x => t ? x.sec > 0 : x.reps > 0); if (!sets.length) continue;
+    if (t) { const b = Math.max(...sets.map(x => x.sec)); pts.push({ d: s.date, x: ts(s.date), y: b, tip: `serie migliore ${secStr(b)}″`, sets }); continue; }
     const b = bestOf(ex, sets);
     pts.push({ d: s.date, x: ts(s.date), y: r1(e1rm(ex, +b.kg || 0, b.reps)), tip: `migliore ${fk(+b.kg || 0)} kg × ${b.reps}`, sets });
   }
-  $("g-ex-note").textContent = ex.bw ? "Massimale stimato con il tuo peso corporeo incluso (l'ultimo segnato in Corpo)." : "Massimale stimato dalla serie migliore di ogni seduta. Se la linea sale, sei più forte.";
-  chart($("g-chart"), pts, { unit: "kg", fmt: v => fk(r1(v)), label: "Massimale stimato " + ex.n, ref: ex.id === "panca" ? { y: BENCH_1RM, label: "massimale di partenza 80" } : null,
+  $("g-ex-note").textContent = t ? "Esercizio a tempo: la serie più lunga di ogni seduta, in secondi." : ex.bw ? "Massimale stimato con il tuo peso corporeo incluso (l'ultimo segnato in Corpo)." : "Massimale stimato dalla serie migliore di ogni seduta. Se la linea sale, sei più forte.";
+  chart($("g-chart"), pts, { unit: t ? "s" : "kg", fmt: v => t ? secStr(Math.round(v)) : fk(r1(v)), label: (t ? "Serie più lunga " : "Massimale stimato ") + ex.n, ref: ex.id === "panca" && !t ? { y: BENCH_1RM, label: "massimale di partenza 80" } : null,
     empty: `Ancora nessuna serie di ${esc(ex.n.toLowerCase())}. Dopo la prima seduta qui compare la tua curva.` });
-  $("g-table").innerHTML = [...pts].reverse().slice(0, 6).map(p => `<div class="li"><div class="t"><b>${ddmm(p.d)}</b><span>${p.sets.map(x => fk(+x.kg || 0) + "×" + x.reps).join(" · ")}</span></div><b>${fk(p.y)}</b></div>`).join("");
+  $("g-table").innerHTML = [...pts].reverse().slice(0, 6).map(p => `<div class="li"><div class="t"><b>${ddmm(p.d)}</b><span>${p.sets.map(x => fmtSet(x, t)).join(" · ")}</span></div><b>${t ? secStr(p.y) + "″" : fk(p.y)}</b></div>`).join("");
 
   chart($("g-vol"), asc.slice(-14).map(s => ({ d: s.date, x: ts(s.date), y: Math.round(volumeOf(s)), tip: "Scheda " + s.plan })),
     { bar: true, unit: "kg", fmt: v => v >= 1000 ? fk(r1(v / 1000)) + "k" : String(Math.round(v)), label: "Volume per seduta", empty: "Compare dopo la prima seduta." });

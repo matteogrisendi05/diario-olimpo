@@ -47,6 +47,16 @@
       <p class="note" id="w-note"></p>
     </div>
     <div id="w-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="card" id="w-addcard">
+      <h3>Aggiungi un esercizio</h3>
+      <div class="small muted">Anche fuori scheda: l'app lo ricorda e la prossima volta lo trovi qui sotto. Per gli esercizi a tempo (plank…) scegli "Tempo".</div>
+      <div class="chips" id="w-lib" hidden></div>
+      <div class="fields">
+        <label class="fld">Esercizio<input id="w-new-n" type="text" placeholder="es. Plank sui gomiti" autocomplete="off"></label>
+        <label class="fld">Misura<select id="w-new-m"><option value="reps">kg × ripetizioni</option><option value="time">Tempo (secondi)</option></select></label>
+      </div>
+      <button class="btn ghost" id="w-new-add">+ Aggiungi alla seduta</button>
+    </div>
     <div class="savemsg" id="w-msg">Tocca ✓ alla fine di ogni serie: salvo tutto da solo.</div>
     <button class="card linkcard" id="w-plan"><span><b>Scheda completa e blocchi</b><span class="small muted">Esercizi, progressione e i tre blocchi fino a Roma</span></span><span aria-hidden="true">›</span></button>
     <button class="card linkcard" id="w-arch"><span><b>Archivio</b><span class="small muted">Tutto quello che hai inserito, giorno per giorno: rivedi e correggi</span></span><span aria-hidden="true">›</span></button>
