@@ -581,8 +581,38 @@ function renderProg() {
     const n = Object.values(s.sets).reduce((a, b) => a + b.length, 0);
     return `<div class="li"><div class="t"><b>${longDate(s.date)}</b><span>Scheda ${s.plan} · ${n} serie · ${Math.round(volumeOf(s)).toLocaleString("it-IT")} kg</span></div><div class="acts"><button class="lnk" data-open="${s.id}">Apri</button><button class="lnk danger" data-del="${s.id}">Elimina</button></div></div>`;
   }).join("") : `<p class="empty">Nessuna seduta ancora. La prima è sabato alle 17:30, Scheda B.</p>`;
+  renderSport();
 }
 $("g-ex").addEventListener("change", e => { lsSet("olimpo-ex", e.target.value); renderProg(); });
+
+/* ---------- basket and calcetto statistics (from the checklist entries in Note) ---------- */
+let sport = lsGet("olimpo-sport", "partita");
+function sportEntries(kind) {
+  const out = [];
+  for (const d of state.intake) for (const a of Object.values(d.activities || {}))
+    if (a && a.name && (a.kind || actKind(a.name)) === kind && a.status && a.status !== "no") out.push({ date: d.id, ...a });
+  return out.sort((a, b) => a.date < b.date ? -1 : 1);
+}
+const avg = (xs, k) => { const v = xs.filter(x => x[k] != null); return v.length ? v.reduce((s, x) => s + x[k], 0) / v.length : null; };
+function renderSport() {
+  for (const b of $("s-sport").querySelectorAll("button")) b.setAttribute("aria-pressed", b.dataset.sport === sport);
+  const g = sportEntries(sport), bk = sport === "partita", f1 = v => v == null ? "—" : fk(r1(v));
+  const tot = k => g.reduce((s, x) => s + (x[k] || 0), 0);
+  $("s-tiles").innerHTML = (bk
+    ? [["Partite", g.length, "segnate"], ["Punti", f1(avg(g, "pts")), "media"], ["Minuti", f1(avg(g, "min")), "media"], ["Record", g.length ? Math.max(0, ...g.map(x => x.pts || 0)) : "—", "punti"]]
+    : [["Partite", g.length, "segnate"], ["Gol", tot("gol"), "in totale"], ["Assist", tot("ast"), "in totale"], ["G + A", g.length ? f1((tot("gol") + tot("ast")) / g.length) : "—", "a partita"]]
+  ).map(([k, v, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("");
+  const desc = x => bk ? `${x.pts ?? "—"} punti · ${x.min ?? "—"}'` : `${x.gol ?? 0} gol · ${x.ast ?? 0} assist${x.min != null ? ` · ${x.min}'` : ""}`;
+  chart($("s-chart"), g.slice(-15).map(x => ({ d: x.date, x: ts(x.date), y: bk ? (x.pts || 0) : (x.gol || 0) + (x.ast || 0), tip: desc(x) })),
+    { bar: true, unit: bk ? "punti" : "G+A", fmt: v => String(Math.round(v)), label: bk ? "Punti per partita" : "Gol + assist per partita",
+      empty: bk ? "Dopo una partita, segna minuti e punti in Note: qui compare il grafico." : "Dopo una partita di calcetto, segna gol, assist e minuti in Note: qui compare il grafico." });
+  $("s-list").innerHTML = [...g].reverse().slice(0, 6).map(x => `<div class="li"><div class="t"><b>${longDate(x.date)}</b><span>${esc(desc(x))}${x.note ? ` · ${esc(cut(x.note, 70))}` : ""}</span></div><div class="acts"><button class="lnk" data-sday="${x.date}">Modifica</button></div></div>`).join("");
+  const tr = sportEntries("basket").filter(x => x.date >= shiftDate(today(), -27)), n = k => tr.filter(x => x.intensita === k).length;
+  const pl = (v, one, many) => `${v} ${v === 1 ? one : many}`, none = tr.length - n("semplice") - n("normale") - n("duro");
+  $("s-train").textContent = bk && tr.length ? `Allenamenti di basket nelle ultime 4 settimane: ${tr.length} (${[pl(n("semplice"), "semplice", "semplici"), pl(n("normale"), "normale", "normali"), pl(n("duro"), "duro", "duri"), none ? pl(none, "senza valutazione", "senza valutazione") : ""].filter(Boolean).join(", ")}).` : "";
+}
+$("s-sport").addEventListener("click", e => { const b = e.target.closest("button[data-sport]"); if (b) { sport = b.dataset.sport; lsSet("olimpo-sport", sport); renderSport(); } });
+$("s-list").addEventListener("click", e => { const b = e.target.closest("button[data-sday]"); if (b) { showTab("notes"); notesDate = b.dataset.sday; renderNotes(); } });
 function armDelete(btn, run) {
   if (btn.dataset.armed) { btn.disabled = true; run().catch(() => { btn.disabled = false; btn.textContent = "Riprova"; }); return; }
   btn.dataset.armed = "1"; btn.textContent = "Sicuro?";
@@ -683,7 +713,7 @@ const shiftDate = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate
 function intakeFor(date) {
   const x = state.intake.find(i => i.id === date) || {};
   const copy = v => v ? JSON.parse(JSON.stringify(v)) : {};
-  return { date, meals: copy(x.meals), extras: x.extras || "", activities: copy(x.activities), notes: x.notes || "", photos: x.photos ? JSON.parse(JSON.stringify(x.photos)) : [] };
+  return { date, meals: copy(x.meals), extras: x.extras || "", activities: copy(x.activities), notes: x.notes || "", photos: x.photos ? JSON.parse(JSON.stringify(x.photos)) : [], added: x.added ? [...x.added] : [] };
 }
 const saveIntake = (mutate, date = foodDate, defer = false) => { const cur = intakeFor(date); mutate(cur); deferDiary = defer; put("intake", date, cur); };
 // Entries are keyed by position (that is how the agent reads them) but also carry the name,
@@ -915,11 +945,24 @@ function renderHome() {
 let notesDate = today();
 const AST = [["ok", "✓ Fatto"], ["part", "Parziale"], ["no", "Non fatto"]];
 const WEEK_ACTS = { 1: ["Basket"], 2: ["Basket serie D"], 3: ["Basket"], 4: ["Corsa di qualità", "Palestra A"], 5: ["Partita"], 6: ["Corsa facile + core", "Palestra B"], 0: ["Lungo"] };
+// Basket and calcetto: the entry of the day's checklist also holds the numbers of the activity.
+// partita (basket game): min, pts, note · basket (practice): intensita semplice|normale|duro · calcetto (game): gol, ast, min, note.
+const actKind = name => /calcetto/i.test(name) ? "calcetto" : /partita/i.test(name) ? "partita" : /basket/i.test(name) ? "basket" : null;
+const INT = [["semplice", "Semplice"], ["normale", "Normale"], ["duro", "Duro"]];
+const GAME_F = { partita: [["min", "Minuti giocati"], ["pts", "Punti"]], calcetto: [["gol", "Gol"], ["ast", "Assist"], ["min", "Minuti"]] };
+const ADD_ACTS = ["Partita di basket", "Allenamento basket", "Calcetto"];
 function activitiesFor(date) {
-  const plan = state.nutrition.find(x => x.id === date);
+  const plan = state.nutrition.find(x => x.id === date), added = intakeFor(date).added;
   if (plan && Array.isArray(plan.training) && plan.training.length)
-    return { list: plan.training, src: "Dal tuo calendario, letto dal nutrizionista stamattina." };
-  return { list: WEEK_ACTS[new Date(date + "T12:00:00").getDay()], src: "Dalla settimana tipo. Quando arriva il piano del mattino, l'elenco usa i dati esatti del calendario." };
+    return { list: [...plan.training, ...added], src: "Dal tuo calendario, letto dal nutrizionista stamattina." };
+  return { list: [...WEEK_ACTS[new Date(date + "T12:00:00").getDay()], ...added], src: "Dalla settimana tipo. Quando arriva il piano del mattino, l'elenco usa i dati esatti del calendario." };
+}
+function actExtra(name, i, a, st) {
+  const kind = actKind(name);
+  if (!kind || st === "no") return "";
+  if (kind === "basket") return `<div class="small muted">Com'è stato l'allenamento?</div>
+    <div class="seg three" role="group" aria-label="Intensità">${INT.map(([k, l]) => `<button data-int="${i}" data-v="${k}" aria-pressed="${a.intensita === k}">${l}</button>`).join("")}</div>`;
+  return `<div class="fields ${GAME_F[kind].length === 3 ? "three" : ""}">${GAME_F[kind].map(([k, l]) => `<label class="fld">${l}<input data-act="${i}" data-k="${k}" inputmode="numeric" value="${a[k] != null ? esc(a[k]) : ""}" placeholder="0"></label>`).join("")}</div>`;
 }
 function renderNotes() {
   const log = intakeFor(notesDate), { list, src } = activitiesFor(notesDate);
@@ -928,15 +971,19 @@ function renderNotes() {
   $("n-src").textContent = src;
   if (document.activeElement !== $("n-notes")) $("n-notes").value = log.notes;
   const sets = state.sessions.filter(s => s.date === notesDate).reduce((a, s) => a + Object.values(s.sets).reduce((x, y) => x + y.length, 0), 0);
+  const nPlanned = list.length - log.added.length;
   $("n-list").innerHTML = list.map((name, i) => {
-    const a = entryFor(log.activities, i, name), st = a.status || "";
-    const hint = /palestra/i.test(name) && sets ? `${sets} serie segnate nell'app` : "";
+    const a = entryFor(log.activities, i, name), st = a.status || "", kind = actKind(name);
+    const hint = /palestra/i.test(name) && sets ? `${sets} serie segnate nell'app` : i >= nPlanned ? "aggiunta da te" : "";
+    const game = kind === "partita" || kind === "calcetto";
+    const ph = st === "part" ? "Cosa hai fatto davvero? es. 9 km invece di 15" : st === "no" ? "Perché? es. dolore al ginocchio, pioggia, lavoro" : kind === "calcetto" ? "Com'è andata? Cosa hai fatto o provato (es. più pressing, tiri da fuori)" : "Com'è andata? Cosa hai fatto o provato (es. più tiri da tre, difesa sul play)";
     return `<div class="act">
-      <div class="act-top"><b>${esc(name)}</b>${hint ? `<span class="small muted">${hint}</span>` : ""}</div>
+      <div class="act-top"><b>${esc(name)}</b>${hint ? `<span class="small muted">${hint}</span>` : ""}${i >= nPlanned ? `<button class="lnk danger" data-unadd="${i - nPlanned}">Togli</button>` : ""}</div>
       <div class="seg three" role="group" aria-label="${esc(name)}">${AST.map(([k, l]) => `<button data-act="${i}" data-st="${k}" aria-pressed="${st === k}">${l}</button>`).join("")}</div>
-      ${st === "part" || st === "no" ? `<textarea class="eaten" data-act="${i}" rows="2" placeholder="${st === "part" ? "Cosa hai fatto davvero? es. 9 km invece di 15" : "Perché? es. dolore al ginocchio, pioggia, lavoro"}">${esc(a.note || "")}</textarea>` : ""}
+      ${actExtra(name, i, a, st)}
+      ${st === "part" || st === "no" || (game && st) ? `<textarea class="eaten" data-act="${i}" rows="2" placeholder="${ph}">${esc(a.note || "")}</textarea>` : ""}
     </div>`;
-  }).join("");
+  }).join("") + `<div class="act"><div class="small muted">Hai fatto altro? Aggiungi</div><div class="chips">${ADD_ACTS.map(n => `<button class="chip" data-addact="${esc(n)}">+ ${n}</button>`).join("")}</div></div>`;
   const marked = list.filter((n, i) => entryFor(log.activities, i, n).status).length;
   const done = list.filter((n, i) => entryFor(log.activities, i, n).status === "ok").length;
   $("n-sum").textContent = marked
@@ -944,20 +991,44 @@ function renderNotes() {
     : "Segna com'è andata ogni attività: domattina il nutrizionista ne tiene conto.";
 }
 $("n-list").addEventListener("click", e => {
+  const add = e.target.closest("button[data-addact]");
+  if (add) { saveIntake(cur => { cur.added = [...cur.added, add.dataset.addact]; }, notesDate); return; }
+  const un = e.target.closest("button[data-unadd]");
+  if (un) {
+    const j = +un.dataset.unadd, { list } = activitiesFor(notesDate), i = list.length - intakeFor(notesDate).added.length + j;
+    armDelete(un, async () => saveIntake(cur => {
+      const name = cur.added[j];
+      for (const k of Object.keys(cur.activities)) if (k === String(i) || (cur.activities[k] && cur.activities[k].name === name)) delete cur.activities[k];
+      cur.added.splice(j, 1);
+    }, notesDate));
+    return;
+  }
+  const ib = e.target.closest("button[data-int]");
+  if (ib) {
+    const i = ib.dataset.int, name = activitiesFor(notesDate).list[i];
+    saveIntake(cur => { const prev = entryFor(cur.activities, i, name); setEntry(cur.activities, i, name, { ...prev, kind: actKind(name), status: prev.status || "ok", intensita: prev.intensita === ib.dataset.v ? undefined : ib.dataset.v }); }, notesDate);
+    return;
+  }
   const b = e.target.closest("button[data-act]"); if (!b) return;
-  const i = b.dataset.act, st = b.dataset.st, name = activitiesFor(notesDate).list[i];
+  const i = b.dataset.act, st = b.dataset.st, name = activitiesFor(notesDate).list[i], game = /partita|calcetto/.test(actKind(name) || "");
   saveIntake(cur => {
     const prev = entryFor(cur.activities, i, name);
-    setEntry(cur.activities, i, name, prev.status === st ? {} : { status: st, note: st === "ok" ? "" : (prev.note || "") });
+    setEntry(cur.activities, i, name, prev.status === st ? {} : { ...prev, kind: actKind(name) || undefined, status: st, note: st === "ok" && !game ? "" : (prev.note || "") });
   }, notesDate);
   if (st !== "ok") setTimeout(() => { const t = document.querySelector(`textarea[data-act="${i}"]`); if (t) t.focus(); }, 50);
 });
-const saveActText = (t, date) => {
+// Text and numbers of an activity: saved while typing. Writing a number marks the activity as done.
+const saveActField = (t, date) => {
   const i = t.dataset.act, name = activitiesFor(date).list[i];
-  saveIntake(cur => setEntry(cur.activities, i, name, { status: entryFor(cur.activities, i, name).status || "part", note: t.value.trim() }), date, true);
+  saveIntake(cur => {
+    const prev = entryFor(cur.activities, i, name), k = t.dataset.k;
+    const val = k ? (t.value.trim() === "" ? undefined : Math.max(0, Math.round(num(t.value)))) : t.value.trim();
+    setEntry(cur.activities, i, name, { ...prev, kind: actKind(name) || undefined, status: prev.status || (k ? "ok" : "part"), [k || "note"]: Number.isNaN(val) ? undefined : val });
+  }, date, true);
 };
-$("n-list").addEventListener("input", e => { const t = e.target.closest("textarea[data-act]"); if (t) { const d = notesDate; saveTextSoon(() => saveActText(t, d)); } });
-$("n-list").addEventListener("change", e => { const t = e.target.closest("textarea[data-act]"); if (t) saveTextNow(() => saveActText(t, notesDate)); });
+const actInput = e => e.target.closest("textarea[data-act], input[data-act]");
+$("n-list").addEventListener("input", e => { const t = actInput(e); if (t) { const d = notesDate; saveTextSoon(() => saveActField(t, d)); } });
+$("n-list").addEventListener("change", e => { const t = actInput(e); if (t) saveTextNow(() => saveActField(t, notesDate)); });
 const saveNotes = date => saveIntake(cur => { cur.notes = $("n-notes").value.trim(); }, date, true);
 $("n-notes").addEventListener("input", () => { const d = notesDate; saveTextSoon(() => saveNotes(d)); });
 $("n-notes").addEventListener("change", () => saveTextNow(() => saveNotes(notesDate)));
@@ -1174,6 +1245,12 @@ function renderCoach() {
   if (cs.length || rq.length) out.push(`<div class="card prose"><h3>Per oggi</h3><ul>${cs.map(x => `<li>${esc(x.testo || "")} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>
     ${rq.length ? `<div class="small muted">Chiesto al nutrizionista</div><ul>${rq.map(x => `<li><b>${esc(x.esigenza || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}</div>`);
   if (pg.length) out.push(`<div class="card"><h3>Progressione in palestra</h3><div class="small muted">↑ = hai chiuso tutte le serie al massimo delle ripetizioni: si sale di carico.</div><div class="list coach-prog">${pg.map(p => `<div class="li"><div class="t"><b>${esc(p.esercizio || "")}</b><span>${esc(p.ultimo || "")}${p.obiettivo ? ` · obiettivo ${esc(p.obiettivo)}` : ""}</span></div><b${p.pronto ? ' class="ok"' : ""}>${p.pronto ? "↑ " : ""}${esc(p.proposta || "")}</b></div>`).join("")}</div></div>`);
+  const sp = r.sport || {}, bp = sp.basket_partite, cc = sp.calcetto, ab = sp.allenamenti_basket_4sett;
+  if (bp || cc || (ab && ab.totale)) out.push(`<div class="card"><h3>Basket e calcetto</h3><div class="list">
+    ${bp ? `<div class="li"><div class="t"><b>Partite di basket · ${bp.partite}</b><span>Ultima ${ddmm(bp.ultima.date)}: ${bp.ultima.pts ?? "—"} punti in ${bp.ultima.min ?? "—"}'</span></div><b>${bp.media_pts != null ? fk(bp.media_pts) + " pt" : "—"}</b></div>` : ""}
+    ${cc ? `<div class="li"><div class="t"><b>Calcetto · ${cc.partite}</b><span>Ultima ${ddmm(cc.ultima.date)}: ${cc.ultima.gol ?? 0} gol, ${cc.ultima.ast ?? 0} assist</span></div><b>${cc.media_gol != null ? fk(r1((cc.media_gol || 0) + (cc.media_ast || 0))) + " G+A" : "—"}</b></div>` : ""}
+    ${ab && ab.totale ? `<div class="li"><div class="t"><b>Allenamenti basket · 4 settimane</b><span>${ab.semplice} semplici · ${ab.normale} normali · ${ab.duro} duri</span></div><b>${ab.totale}</b></div>` : ""}
+  </div></div>`);
   const ratioOff = c.rapporto != null && c.rapporto > 1.3;
   out.push(`<div class="tiles four">${[
     ["Carico 7 gg", c.settimana ?? "—", "RPE × minuti", false],

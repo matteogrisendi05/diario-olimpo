@@ -160,6 +160,9 @@ details.how p{margin:8px 0 0;font-size:.86rem;color:var(--muted)}
 select{font:600 16px var(--f-body);color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:46px;width:100%}
 select option{background:var(--solid);color:var(--ink)}
 .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.fields.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+#s-card{display:flex;flex-direction:column;gap:10px}
+.act-top .lnk{margin-left:auto}
 .fld{display:flex;flex-direction:column;gap:5px;font-size:.66rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);min-width:0}
 .fld input,.fld input[type="time"]{font:650 17px var(--f-body);color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:0 12px;height:46px;width:100%;min-width:0;font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:0}
 /* Safari iOS gives date fields their own minimum width, which spills into the next column: reset it */

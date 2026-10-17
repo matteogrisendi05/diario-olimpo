@@ -1,5 +1,5 @@
 // Offline support. The deploy script rewrites CACHE on every publish so phones pick up the new version.
-const CACHE = "olimpo-20261017175427";
+const CACHE = "olimpo-20261017181148";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest",
   "vendor/supabase.min.js", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-512.png"];
 
