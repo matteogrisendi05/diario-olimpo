@@ -156,6 +156,10 @@
         <label class="fld">Battito medio bpm<input id="r-hr" inputmode="numeric" placeholder="148"></label>
         <label class="fld">Fatica 1–10<input id="r-rpe" inputmode="numeric" placeholder="5"></label>
       </div>
+      <div class="fld">Immagini del battito (facoltative)
+        <div class="run-imgs" id="r-imgs"></div>
+      </div>
+      <input type="file" id="r-img-file" accept="image/*" hidden>
       <details class="how"><summary>Note (facoltative)</summary>
         <label class="fld" style="margin-top:8px">Note<textarea id="r-note" rows="2" placeholder="es. vento forte, polpaccio duro negli ultimi 3 km"></textarea></label>
       </details>
@@ -311,6 +315,7 @@
 
 <div class="timer" id="timer" hidden aria-label="Recupero"><div><b id="t-left" aria-hidden="true">1:30</b><br><span id="t-what">Recupero</span></div><button id="t-add">+30″</button><button id="t-stop">Fine</button></div>
 <div class="sr" id="t-say" role="status" aria-live="polite"></div>
+<div class="viewer" id="viewer" hidden role="dialog" aria-label="Immagine"><img id="viewer-img" alt=""><button class="lnk" id="viewer-close">Chiudi</button></div>
 
 <nav class="tabbar" role="tablist" aria-label="Sezioni">
   <div class="in">

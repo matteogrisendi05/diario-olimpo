@@ -123,6 +123,31 @@ async function sendPatch(o) {
   return sb.from("docs").update({ data: { ...cur.data[0].data, ...o.data }, updated_at: new Date().toISOString() })
     .match({ user_id: uid, coll: o.coll, id: o.id }).eq("data->>status", "pending");
 }
+// Run images (heart-rate chart and zones) are files in the private Storage bucket, under <user id>/<name>.
+// They travel in the outbox like any change ("img" upload / "imgdel" removal), so they also work offline.
+const BUCKET = "run-images";
+const b64ToBlob = b64 => { const bin = atob(b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: "image/jpeg" }); };
+async function sendImg(o) {
+  const path = uid + "/" + o.id, st = sb.storage.from(BUCKET);
+  const r = o.op === "img" ? await st.upload(path, b64ToBlob(o.data), { upsert: true, contentType: "image/jpeg" }) : await st.remove([path]);
+  if (!r.error) return { error: null };
+  const code = r.error.statusCode || r.error.status;   // refused by Storage (e.g. bucket not created yet) vs. network problem
+  return { error: code ? { code: String(code), message: r.error.message } : r.error };
+}
+const signedUrls = {};
+async function imgUrl(name) {
+  const local = outbox.find(o => o.coll === "img" && o.id === name && o.op === "img");
+  if (local) return "data:image/jpeg;base64," + local.data;
+  const c = signedUrls[name]; if (c && c.exp > Date.now()) return c.url;
+  if (!sb || !uid || !navigator.onLine) return null;
+  const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(uid + "/" + name, 3600);
+  if (error || !data) return null;
+  signedUrls[name] = { url: data.signedUrl, exp: Date.now() + 50 * 60e3 };
+  return data.signedUrl;
+}
+async function fillImgs(root) {
+  for (const el of root.querySelectorAll("img[data-img]")) { const u = await imgUrl(el.dataset.img); if (u) el.src = u; else el.replaceWith(Object.assign(document.createElement("span"), { textContent: "con internet" })); }
+}
 let flushAgain = false;   // a change arrived while sending: send again at the end
 async function flush() {
   if (syncing) { flushAgain = true; return; }
@@ -133,6 +158,7 @@ async function flush() {
       const { error } = o.op === "put"
         ? await sb.from("docs").upsert({ user_id: uid, coll: o.coll, id: o.id, data: o.data, updated_at: new Date().toISOString() }, { onConflict: "user_id,coll,id" })
         : o.op === "patch" ? await sendPatch(o)
+        : o.op === "img" || o.op === "imgdel" ? await sendImg(o)
         : await sb.from("docs").delete().match({ user_id: uid, coll: o.coll, id: o.id });
       const key = o.coll + "/" + o.id;
       if (error) {
@@ -1159,10 +1185,39 @@ function renderRun() {
   const easy = runs.filter(r => r.type === "facile" || r.type === "lungo").reverse();
   chart($("r-pace"), easy.map(r => ({ d: r.date, x: ts(r.date), y: r.pace, tip: `${RUN_TYPES[r.type]} ${fk(r1(r.km))} km${r.hr ? " · " + r.hr + " bpm" : ""}` })),
     { unit: "/km", fmt: paceStr, label: "Ritmo di facili e lunghi", empty: "Il grafico del ritmo compare dopo la prima corsa facile o il primo lungo." });
-  $("r-list").innerHTML = runs.length ? runs.map(r => `<div class="li"><div class="t"><b>${RUN_TYPES[r.type] || "Corsa"} · ${fk(r1(r.km))} km</b><span>${longDate(r.date)} · ${hms(r.sec)} · ${paceStr(r.pace)}/km${r.elev ? " · " + r.elev + " m+" : ""}${r.hr ? " · " + r.hr + " bpm" : ""}${r.rpe ? " · fatica " + r.rpe : ""}</span>${r.note ? `<span>${esc(r.note)}</span>` : ""}</div><div class="acts"><button class="lnk" data-redit="${r.id}">Modifica</button><button class="lnk danger" data-rdel="${r.id}">Elimina</button></div></div>`).join("")
+  const thumbs = r => { const im = r.imgs || {}; const ks = RIMG.filter(([k]) => im[k]);
+    return ks.length ? `<div class="rthumbs">${ks.map(([k, l]) => `<button data-view="${esc(im[k])}" aria-label="${l}"><img data-img="${esc(im[k])}" alt="${l}"></button>`).join("")}</div>` : ""; };
+  $("r-list").innerHTML = runs.length ? runs.map(r => `<div class="li"><div class="t"><b>${RUN_TYPES[r.type] || "Corsa"} · ${fk(r1(r.km))} km</b><span>${longDate(r.date)} · ${hms(r.sec)} · ${paceStr(r.pace)}/km${r.elev ? " · " + r.elev + " m+" : ""}${r.hr ? " · " + r.hr + " bpm" : ""}${r.rpe ? " · fatica " + r.rpe : ""}</span>${r.note ? `<span>${esc(r.note)}</span>` : ""}${thumbs(r)}</div><div class="acts"><button class="lnk" data-redit="${r.id}">Modifica</button><button class="lnk danger" data-rdel="${r.id}">Elimina</button></div></div>`).join("")
     : `<p class="empty">Nessuna corsa ancora. Domani mattina c'è la corsa facile: quando torni, segnala qui.</p>`;
+  fillImgs($("r-list"));
   runHint();
 }
+// Images of the run being entered or edited: kind -> {name} (already saved) | {data} (new, base64) | null (removed).
+const RIMG = [["hr", "Grafico del battito"], ["zones", "Zone di battito"]];
+let runImgs = {}, runImgKind = null;
+function renderRunImgs() {
+  $("r-imgs").innerHTML = RIMG.map(([k, l]) => { const v = runImgs[k];
+    const pic = v && v.data ? `<img src="data:image/jpeg;base64,${v.data}" alt="${l}">` : v && v.name ? `<img data-img="${esc(v.name)}" alt="${l}">` : `+ ${l}`;
+    return `<div class="run-img"><button class="slot" data-rimg="${k}" aria-label="${v ? "Cambia" : "Aggiungi"}: ${l}">${pic}</button>${v ? `<button class="lnk danger" data-rimgdel="${k}">Togli</button>` : ""}</div>`; }).join("");
+  fillImgs($("r-imgs"));
+}
+$("r-imgs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.rimgdel) { runImgs[b.dataset.rimgdel] = null; renderRunImgs(); return; }
+  if (b.dataset.rimg) { runImgKind = b.dataset.rimg; $("r-img-file").click(); }
+});
+$("r-img-file").addEventListener("change", async e => {
+  const file = e.target.files && e.target.files[0]; e.target.value = ""; if (!file || !runImgKind) return;
+  try { runImgs[runImgKind] = { data: (await shrinkImage(file, 1400, 0.82)).split(",")[1] }; runTouched = true; renderRunImgs(); }
+  catch (x) { $("r-msg").textContent = "Non sono riuscito a leggere l'immagine. Riprova."; $("r-msg").className = "savemsg err"; }
+});
+// Full-screen view of an image (tap anywhere or "Chiudi" to close).
+async function openViewer(name) {
+  const u = await imgUrl(name);
+  if (!u) { $("r-msg").textContent = "L'immagine si apre quando c'è internet."; $("r-msg").className = "savemsg"; return; }
+  $("viewer-img").src = u; $("viewer").hidden = false;
+}
+$("viewer").addEventListener("click", () => { $("viewer").hidden = true; $("viewer-img").removeAttribute("src"); });
 $("r-type").addEventListener("click", e => { const b = e.target.closest("button[data-type]"); if (b) { runTouched = true; setType(b.dataset.type); } });
 // Whichever two of distance, duration and pace the user typed decide the third.
 // Values the app filled in itself (auto*) keep following later edits.
@@ -1193,6 +1248,15 @@ $("r-save").addEventListener("click", async () => {
   const id = runEditId || `${date}-${Date.now().toString(36)}`;
   const data = { date, type: runType, km: Math.round(km * 100) / 100, sec: Math.round(dur), pace: Math.round(pace), elev: Math.round(nv("r-elev")), hr: Math.round(nv("r-hr")) || null, rpe: Math.min(10, Math.round(nv("r-rpe"))) || null, note: $("r-note").value.trim() };
   const edited = !!runEditId;
+  // images: new ones are queued for upload (a new name each time, so no stale copy is shown); replaced or removed ones are deleted
+  const old = (state.runs.find(x => x.id === id) || {}).imgs || {}, imgs = {};
+  for (const [k] of RIMG) {
+    const v = runImgs[k];
+    if (v && v.data) { const name = `${id}-${k}-${Date.now().toString(36)}.jpg`; enqueue({ op: "img", coll: "img", id: name, data: v.data }); imgs[k] = name; }
+    else if (v && v.name) imgs[k] = v.name;
+    if (old[k] && old[k] !== imgs[k]) enqueue({ op: "imgdel", coll: "img", id: old[k] });
+  }
+  if (Object.keys(imgs).length) data.imgs = imgs;
   put("runs", id, data);
   resetRunForm();
   m.textContent = `${edited ? "Corsa aggiornata" : "Corsa salvata"}: ${fk(r1(data.km))} km in ${hms(data.sec)}, ${paceStr(data.pace)}/km.`; m.className = "savemsg ok";
@@ -1201,6 +1265,7 @@ let runEditId = null;
 function resetRunForm() {
   for (const id of ["r-km", "r-h", "r-m", "r-s", "r-pm", "r-ps", "r-elev", "r-hr", "r-rpe", "r-note"]) $(id).value = "";
   runTouched = false; autoDur = false; autoKm = false; runEditId = null;
+  runImgs = {}; renderRunImgs();
   $("r-save").textContent = "Salva corsa"; $("r-cancel").hidden = true;
 }
 function editRun(id) {
@@ -1209,17 +1274,25 @@ function editRun(id) {
   $("r-date").value = r.date; setType(r.type || "facile");
   $("r-km").value = String(r.km).replace(".", ","); setDur(r.sec); setPace(r.pace);
   $("r-elev").value = r.elev || ""; $("r-hr").value = r.hr || ""; $("r-rpe").value = r.rpe || ""; $("r-note").value = r.note || "";
+  runImgs = Object.fromEntries(Object.entries(r.imgs || {}).map(([k, n]) => [k, { name: n }])); renderRunImgs();
   $("r-save").textContent = "Salva modifiche"; $("r-cancel").hidden = false;
   $("r-msg").textContent = `Stai modificando la corsa di ${longDate(r.date)}.`; $("r-msg").className = "savemsg";
   $("r-km").closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 $("r-list").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.rdel) armDelete(b, () => del("runs", b.dataset.rdel));
+  if (b.dataset.view) return openViewer(b.dataset.view);
+  if (b.dataset.rdel) armDelete(b, () => delRun(b.dataset.rdel));
   if (b.dataset.redit) editRun(b.dataset.redit);
 });
+// Deleting a run also deletes its images.
+function delRun(id) {
+  for (const n of Object.values((state.runs.find(x => x.id === id) || {}).imgs || {})) enqueue({ op: "imgdel", coll: "img", id: n });
+  return del("runs", id);
+}
 $("r-cancel").addEventListener("click", () => { resetRunForm(); $("r-msg").textContent = "Modifica annullata."; $("r-msg").className = "savemsg"; runHint(); });
 $("r-date").value = today();
+renderRunImgs();
 $("w-plan").addEventListener("click", () => showTab("plan"));
 
 /* ---------- "today" strip at the top of Palestra ---------- */
@@ -1278,7 +1351,7 @@ $("a-filter").addEventListener("click", e => { const b = e.target.closest("butto
 $("a-more").addEventListener("click", () => { archDays += 30; renderArch(); });
 $("a-list").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.adel) { const [coll, id] = b.dataset.adel.split(/:(.+)/); armDelete(b, () => coll === "sessions" ? delSession(id) : del(coll, id)); return; }
+  if (b.dataset.adel) { const [coll, id] = b.dataset.adel.split(/:(.+)/); armDelete(b, () => coll === "sessions" ? delSession(id) : coll === "runs" ? delRun(id) : del(coll, id)); return; }
   if (!b.dataset.aedit) return;
   const [kind, id] = b.dataset.aedit.split(/:(.+)/);
   if (kind === "gym") { const s = state.sessions.find(x => x.id === id); if (s) { switchTo(s.date, s.plan); showTab("work"); } }
