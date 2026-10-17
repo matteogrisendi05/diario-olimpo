@@ -112,7 +112,8 @@ details.how p{margin:8px 0 0;font-size:.86rem;color:var(--muted)}
 .step button{border:0;background:transparent;font-size:1.3rem;font-weight:500;cursor:pointer;color:var(--gold)}
 .step button:active{background:var(--gold-soft)}
 .set input{border:0;background:transparent;text-align:center;font:650 17px var(--f-body);font-variant-numeric:tabular-nums;color:var(--ink);width:100%;min-width:0;padding:0}
-.set .reps{background:var(--sunk);border:1px solid var(--line);border-radius:12px;height:46px}
+.set .reps{background:var(--sunk);border:1px solid var(--line);border-radius:12px;height:46px;display:flex}
+.set .reps input,.step input{height:100%}
 .set input::placeholder{color:var(--faint);font-weight:400;font-size:14px}
 .chk{width:46px;height:46px;border-radius:14px;border:1.5px solid var(--line-hi);background:transparent;cursor:pointer;display:grid;place-items:center;transition:background .2s,transform .1s}
 .chk:active{transform:scale(.94)}
@@ -202,7 +203,9 @@ select option{background:var(--solid);color:var(--ink)}
 .li .t span{font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .li .acts{display:flex;gap:2px;flex-shrink:0}
 .li > b:last-child{color:var(--gold);font-variant-numeric:tabular-nums}
-.meal .li b:last-child{white-space:nowrap}
+/* food rows: name on the left takes the space, the quantity on the right wraps if it is long (never on top of the name) */
+.meal .li .t{flex:1 1 auto}
+.meal .li > b:last-child{flex:0 1 auto;max-width:45%;text-align:right;overflow-wrap:anywhere}
 
 /* plan */
 .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
