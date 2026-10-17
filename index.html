@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Diario Olimpo</title>
+<meta name="description" content="Diario della palestra: schede, carichi, progressi e misure.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Olimpo">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#07090f">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="hdr">
+    <div class="eyebrow" id="h-eyebrow">Oggi</div>
+    <h1 id="h-title">Diario Olimpo</h1>
+    <div class="meander" aria-hidden="true"></div>
+    <button class="sync" id="sync" type="button"><i></i><span>Connessione…</span></button>
+  </header>
+
+  <!-- ALLENAMENTO -->
+  <section class="view" id="v-work">
+    <button class="card linkcard" id="w-today"><span><span class="eyebrow">Oggi</span><b id="w-today-t"></b><span class="small muted" id="w-today-s"></span></span><span aria-hidden="true">›</span></button>
+    <div class="today">
+      <div class="seg" role="group" aria-label="Scheda">
+        <button id="w-a" data-plan="A" aria-pressed="true">A · Forza</button>
+        <button id="w-b" data-plan="B" aria-pressed="false">B · Estetica</button>
+      </div>
+      <div class="trow">
+        <label class="datepill"><span id="w-datelbl">oggi</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><input type="date" id="w-date" aria-label="Data della seduta"></label>
+        <span class="small muted" id="w-dur"></span>
+      </div>
+      <div class="prog">
+        <div class="ring"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6dc9c"/><stop offset=".55" stop-color="#d9a854"/><stop offset="1" stop-color="#a9742d"/></linearGradient></defs><circle class="trk" cx="32" cy="32" r="28"/><circle class="val" id="w-bar" cx="32" cy="32" r="28"/></svg><b id="w-pct">0%</b></div>
+        <div class="lbl"><span id="w-done">0 serie fatte</span><span id="w-vol"></span></div>
+      </div>
+      <p class="note" id="w-note"></p>
+    </div>
+    <div id="w-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="savemsg" id="w-msg">Tocca ✓ alla fine di ogni serie: salvo tutto da solo.</div>
+    <button class="card linkcard" id="w-plan"><span><b>Scheda completa e blocchi</b><span class="small muted">Esercizi, progressione e i tre blocchi fino a Roma</span></span><span aria-hidden="true">›</span></button>
+    <button class="card linkcard" id="w-arch"><span><b>Archivio</b><span class="small muted">Tutto quello che hai inserito, giorno per giorno: rivedi e correggi</span></span><span aria-hidden="true">›</span></button>
+  </section>
+
+  <!-- PROGRESSI -->
+  <section class="view" id="v-prog" hidden>
+    <div class="tiles" id="g-tiles"></div>
+    <div class="card">
+      <h3>Forza stimata</h3>
+      <select id="g-ex" aria-label="Esercizio"></select>
+      <div class="small muted" id="g-ex-note"></div>
+      <div class="chart" id="g-chart"></div>
+      <div class="list" id="g-table"></div>
+    </div>
+    <div class="card">
+      <h3>Volume per seduta</h3>
+      <div class="small muted">Somma di kg × ripetizioni. Cresce quando aumenti carichi o ripetizioni.</div>
+      <div class="chart" id="g-vol"></div>
+    </div>
+    <div class="card">
+      <h3>Storico</h3>
+      <div class="list" id="g-hist"></div>
+    </div>
+  </section>
+
+  <!-- CORPO -->
+  <section class="view" id="v-body" hidden>
+    <div class="tiles" id="b-tiles"></div>
+    <div class="card">
+      <h3>Nuova misurazione</h3>
+      <div class="fields">
+        <label class="fld">Data<input type="date" id="b-date"></label>
+        <label class="fld">Peso kg<input id="b-w" inputmode="decimal" placeholder="82,0"></label>
+        <label class="fld">Vita cm<input id="b-waist" inputmode="decimal" placeholder="88"></label>
+        <label class="fld">Collo cm<input id="b-neck" inputmode="decimal" placeholder="39"></label>
+      </div>
+      <details class="how"><summary>Misure del fisico · ogni 2 settimane</summary>
+        <div class="fields" style="margin-top:10px;grid-template-columns:repeat(3,minmax(0,1fr))">
+          <label class="fld">Spalle cm<input id="b-sh" inputmode="decimal" placeholder="120"></label>
+          <label class="fld">Petto cm<input id="b-chestc" inputmode="decimal" placeholder="100"></label>
+          <label class="fld">Braccio cm<input id="b-arm" inputmode="decimal" placeholder="35"></label>
+          <label class="fld">Coscia cm<input id="b-thighc" inputmode="decimal" placeholder="58"></label>
+          <label class="fld">Polpaccio cm<input id="b-calf" inputmode="decimal" placeholder="38"></label>
+        </div>
+        <p>Al mattino, prima di allenarti: dopo la palestra il muscolo è gonfio e la misura non vale. Metro aderente ma senza stringere.<br><b>Spalle</b>: in piedi, braccia lungo i fianchi, metro orizzontale nel punto più largo delle spalle, a fine espirazione. Fattela prendere da qualcuno.<br><b>Petto</b>: sotto le ascelle, sopra i capezzoli, a fine espirazione.<br><b>Braccio</b>: destro, bicipite contratto, nel punto più grosso.<br><b>Coscia</b>: destra, in piedi con il peso su tutte e due le gambe, appena sotto il gluteo.<br><b>Polpaccio</b>: destro, in piedi, nel punto più grosso.<br>Se coscia e polpaccio calano mentre la vita resta uguale, la corsa ti sta mangiando muscolo: mangia di più.</p>
+      </details>
+      <button class="btn" id="b-save">Salva misurazione</button>
+      <div class="savemsg" id="b-msg">Una volta a settimana, al mattino a digiuno. Vita all'ombelico a pancia rilassata. Collo appena sotto il pomo d'Adamo.</div>
+    </div>
+    <div class="card"><h3>Massa grassa</h3><p class="bfhow">Formula ufficiale della Marina USA (Hodgdon e Beckett, Naval Health Research Center, 1984), usata da tutte le forze armate americane dal 2002: altezza, vita all'ombelico e collo sotto il pomo d'Adamo. Rispetto alla DEXA sbaglia in media di circa ±3 punti, quindi conta che il numero scenda, non il valore esatto. L'obiettivo 12–13% per l'addome visibile è un obiettivo estetico, non una soglia ufficiale.</p><div class="chart" id="b-chart-bf"></div></div>
+    <div class="card"><h3>Proporzioni da statua</h3><p class="bfhow">Spalle ÷ vita. Le statue greche stanno intorno a 1,62, la sezione aurea. Il rapporto sale se allarghi le spalle o stringi la vita: è il numero che misura il tuo obiettivo. Nell'ideale classico anche braccio, collo e polpaccio misurano uguale.</p><div class="chart" id="b-chart-ad"></div><div class="list" id="b-meas"></div></div>
+    <div class="card"><h3>Peso corporeo</h3><div class="chart" id="b-chart-w"></div></div>
+    <div class="card"><h3>Giro vita</h3><div class="small muted">È il numero che conta: se scende mentre la forza sale, stai perdendo grasso e mettendo muscolo.</div><div class="chart" id="b-chart-v"></div></div>
+    <div class="card"><h3>Misurazioni</h3><div class="list" id="b-table"></div></div>
+  </section>
+
+  <!-- CORSA -->
+  <section class="view" id="v-run" hidden>
+    <div class="tiles" id="r-tiles"></div>
+    <div class="card">
+      <h3>Nuova corsa</h3>
+      <div class="small muted" id="r-hint"></div>
+      <div class="seg four" role="group" aria-label="Tipo di corsa" id="r-type">
+        <button data-type="facile" aria-pressed="true">Facile</button>
+        <button data-type="lungo" aria-pressed="false">Lungo</button>
+        <button data-type="qualita" aria-pressed="false">Qualità</button>
+        <button data-type="gara" aria-pressed="false">Gara</button>
+      </div>
+      <div class="fields">
+        <label class="fld">Data<input type="date" id="r-date"></label>
+        <label class="fld">Distanza km<input id="r-km" inputmode="decimal" placeholder="12,0"></label>
+      </div>
+      <div class="fld">Durata totale
+        <div class="trio"><input id="r-h" inputmode="numeric" placeholder="h" aria-label="Ore"><span>:</span><input id="r-m" inputmode="numeric" placeholder="min" aria-label="Minuti"><span>:</span><input id="r-s" inputmode="numeric" placeholder="sec" aria-label="Secondi"></div>
+      </div>
+      <div class="fields">
+        <div class="fld">Ritmo medio /km
+          <div class="trio two"><input id="r-pm" inputmode="numeric" placeholder="min" aria-label="Minuti al km"><span>:</span><input id="r-ps" inputmode="numeric" placeholder="sec" aria-label="Secondi al km"></div>
+        </div>
+        <label class="fld">Dislivello m+<input id="r-elev" inputmode="numeric" placeholder="0"></label>
+      </div>
+      <div class="fields">
+        <label class="fld">Battito medio bpm<input id="r-hr" inputmode="numeric" placeholder="148"></label>
+        <label class="fld">Fatica 1–10<input id="r-rpe" inputmode="numeric" placeholder="5"></label>
+      </div>
+      <details class="how"><summary>Note (facoltative)</summary>
+        <label class="fld" style="margin-top:8px">Note<textarea id="r-note" rows="2" placeholder="es. vento forte, polpaccio duro negli ultimi 3 km"></textarea></label>
+      </details>
+      <button class="btn" id="r-save">Salva corsa</button>
+      <button class="lnk" id="r-cancel" hidden>Annulla modifica</button>
+      <div class="savemsg" id="r-msg">Scrivine due tra distanza, durata e ritmo: il terzo lo calcolo io.</div>
+    </div>
+    <div class="card"><h3>Km a settimana</h3><div class="chart" id="r-week"></div></div>
+    <div class="card"><h3>Ritmo di facili e lunghi</h3><div class="small muted">Se scende a parità di battito, il motore sta crescendo.</div><div class="chart" id="r-pace"></div></div>
+    <div class="card"><h3>Le tue corse</h3><div class="list" id="r-list"></div></div>
+  </section>
+
+  <!-- CIBO -->
+  <section class="view" id="v-food" hidden>
+    <div class="today">
+      <div class="trow">
+        <button class="lnk" id="f-prev">‹ Prima</button>
+        <label class="datepill"><span id="f-datelbl">Oggi</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><input type="date" id="f-date" aria-label="Giorno del piano"></label>
+        <button class="lnk" id="f-next">Dopo ›</button>
+      </div>
+      <p class="note" id="f-day"></p>
+    </div>
+    <div class="tiles four" id="f-tiles"></div>
+    <div class="card prose alert" id="f-alerts" hidden></div>
+    <div class="card adj" id="f-adj" hidden></div>
+    <div class="card prose" id="f-changes" hidden></div>
+    <div id="f-meals" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="card" id="f-photo-card">
+      <h3>Cosa hai mangiato</h3>
+      <div class="small muted">Scatta il piatto oppure scrivi cosa hai mangiato. Domattina alle 6 il nutrizionista calcola grammi, calorie e macro e li usa per il piano del giorno. Finché non l'ha analizzato puoi modificare il testo.</div>
+      <label class="fld">Descrizione o dettagli<textarea id="f-photo-note" rows="2" placeholder="es. pasta al pomodoro, porzione grande, con 2 cucchiai d'olio"></textarea></label>
+      <div class="photo-actions">
+        <label class="btn photo-btn" for="f-photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Foto</label>
+        <button class="btn ghost" id="f-text-save">Salva solo testo</button>
+      </div>
+      <input type="file" id="f-photo" accept="image/*" hidden>
+      <div class="savemsg" id="f-photo-msg" hidden></div>
+      <div class="small" id="f-photo-sum"></div>
+      <div class="list" id="f-photo-list"></div>
+    </div>
+    <div class="card">
+      <h3>Extra e sgarri</h3>
+      <div class="small muted">Tutto quello che hai mangiato fuori dal piano. Scrivi anche le quantità, se le sai. Domattina il nutrizionista ne tiene conto.</div>
+      <textarea class="eaten" id="f-extra" rows="3" placeholder="es. gelato da 2 gusti al pomeriggio, 4 biscotti dopo cena, una birra media"></textarea>
+    </div>
+    <div class="card prose" id="f-tips" hidden></div>
+    <div class="card">
+      <h3>In casa questa settimana</h3>
+      <div class="small muted">Scrivi cosa c'è in frigo e in dispensa (dopo la spesa della mamma). Il nutrizionista costruisce il piano con questi cibi.</div>
+      <textarea class="eaten" id="f-fridge" rows="3" placeholder="es. petto di pollo, uova, tonno in scatola, pasta, riso, mozzarella, yogurt, zucchine, mele, pane"></textarea>
+      <div class="small muted" id="f-fridge-date"></div>
+    </div>
+    <div class="card prose" id="f-habits" hidden></div>
+    <details class="card how" id="f-prof">
+      <summary>Il tuo profilo alimentare</summary>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+        <label class="fld">Alimenti esclusi o allergie<textarea id="p-excl" rows="2" placeholder="es. niente funghi, intollerante al lattosio"></textarea></label>
+        <label class="fld">Cosa ti piace mangiare<textarea id="p-pref" rows="2" placeholder="es. pasta, riso, pollo, tonno, yogurt greco, frutta secca"></textarea></label>
+        <div class="fields">
+          <label class="fld">Colazione alle<input type="time" id="p-bk" value="07:30"></label>
+          <label class="fld">Pranzo alle<input type="time" id="p-lunch" value="13:00"></label>
+        </div>
+        <label class="fld">Dove pranzi di solito<select id="p-where"><option value="casa">A casa</option><option value="lavoro">Al lavoro, porto il pranzo da casa</option><option value="fuori">Fuori (bar, mensa)</option></select></label>
+        <label class="fld">Altro da sapere<textarea id="p-notes" rows="2" placeholder="es. non mangio prima di correre, budget, cucino solo la sera"></textarea></label>
+        <button class="btn" id="p-save">Salva profilo</button>
+        <div class="savemsg" id="p-msg">Il nutrizionista legge questo profilo ogni mattina, verso le 5–6.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- SCHEDA -->
+  <section class="view" id="v-plan" hidden>
+    <div class="card">
+      <h3>La tua settimana</h3>
+      <div class="week" id="s-week"></div>
+      <div class="small muted">Palestra alle 17:30. La corsa di quel giorno al mattino o subito dopo.</div>
+    </div>
+    <div class="card prose">
+      <h3>Come si sale di carico</h3>
+      <ol>
+        <li>Ogni esercizio ha un intervallo, per esempio 4 × 6–8.</li>
+        <li>Con lo stesso carico, ogni volta prova a fare una ripetizione in più.</li>
+        <li>Quando chiudi tutte le serie al massimo dell'intervallo, la volta dopo sali. L'app te lo segna in blu.</li>
+      </ol>
+      <p class="muted">Lascia sempre 1–2 ripetizioni in canna. Bulgaro e stacco rumeno: 3 in canna, le gambe le stanchi già con basket e corsa.</p>
+    </div>
+    <div class="card prose">
+      <h3>Settimane pesanti</h3>
+      <p>Nelle settimane di scarico della corsa e prima dei lunghi da 28 km in su, togli una serie a ogni esercizio. Saltare le gambe va benissimo; saltare il lungo no.</p>
+    </div>
+    <div class="card">
+      <h3>I tre blocchi fino a Roma</h3>
+      <div class="blocks" id="s-blocks"></div>
+      <p class="small muted" id="s-blocknote" style="margin:0"></p>
+    </div>
+    <div id="s-plans" style="display:flex;flex-direction:column;gap:14px"></div>
+    <div class="card prose">
+      <h3>Aprila come un'app</h3>
+      <ol>
+        <li>Apri l'indirizzo dell'app in Safari sull'iPhone.</li>
+        <li>Tocca Condividi, poi «Aggiungi alla schermata Home».</li>
+        <li>Ti ritrovi l'icona accanto alle altre app. Si apre al primo tocco e resta sincronizzata.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- NOTE -->
+  <section class="view" id="v-notes" hidden>
+    <div class="today">
+      <div class="trow">
+        <button class="lnk" id="n-prev">‹ Prima</button>
+        <label class="datepill"><span id="n-datelbl">Oggi</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><input type="date" id="n-date" aria-label="Giorno"></label>
+        <button class="lnk" id="n-next">Dopo ›</button>
+      </div>
+      <p class="note" id="n-sum"></p>
+    </div>
+    <div class="card">
+      <h3>Attività del giorno</h3>
+      <div class="small muted" id="n-src"></div>
+      <div class="acts-list" id="n-list"></div>
+    </div>
+    <div class="card">
+      <h3>Note</h3>
+      <div class="small muted">Sonno, dolori, stanchezza, imprevisti: tutto quello che il nutrizionista deve sapere domattina.</div>
+      <textarea class="eaten" id="n-notes" rows="4" placeholder="es. dormito 5 ore, fastidio al ginocchio destro dopo la partita"></textarea>
+    </div>
+    <button class="card linkcard" id="n-arch"><span><b>Archivio</b><span class="small muted">Sedute, corse, misure, pasti, foto e note già inseriti</span></span><span aria-hidden="true">›</span></button>
+  </section>
+
+  <!-- ARCHIVIO -->
+  <section class="view" id="v-arch" hidden>
+    <div class="tiles four" id="a-tiles"></div>
+    <div class="seg three" id="a-filter" role="group" aria-label="Mostra"></div>
+    <p class="small muted" style="margin:0">Tocca Modifica per aprire il dato nella sua sezione e correggerlo. Le modifiche arrivano anche al nutrizionista.</p>
+    <div id="a-list" style="display:flex;flex-direction:column;gap:12px"></div>
+    <button class="btn" id="a-more" hidden>Mostra i giorni precedenti</button>
+  </section>
+
+  <!-- COACH: report of the morning coach agent (coll "coach", id = date) -->
+  <section class="view" id="v-coach" hidden>
+    <div class="today">
+      <div class="trow">
+        <button class="lnk" id="c-prev">‹ Prima</button>
+        <label class="datepill"><span id="c-datelbl">Oggi</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><input type="date" id="c-date" aria-label="Giorno del report"></label>
+        <button class="lnk" id="c-next">Dopo ›</button>
+      </div>
+      <h2 class="coach-head" id="c-headline"></h2>
+      <p class="note" id="c-today"></p>
+    </div>
+    <div id="c-body" style="display:flex;flex-direction:column;gap:12px"></div>
+  </section>
+</div>
+
+<div class="timer" id="timer" hidden role="status" aria-live="polite"><div><b id="t-left">1:30</b><br><span id="t-what">Recupero</span></div><button id="t-add">+30″</button><button id="t-stop">Fine</button></div>
+
+<nav class="tabbar" role="tablist" aria-label="Sezioni">
+  <div class="in">
+    <span class="lens" aria-hidden="true"></span>
+    <button role="tab" id="tab-work" data-tab="work" aria-selected="true"><svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>Palestra</button>
+    <button role="tab" id="tab-run" data-tab="run" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="15" cy="4.5" r="2"/><path d="M9 21l3-6 3 2v4M6 12l3-4h5l2 4 3 1M12 8l-2 5"/></svg>Corsa</button>
+    <button role="tab" id="tab-food" data-tab="food" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M7 3v18M4.5 3v5a2.5 2.5 0 0 0 5 0V3M17.5 21V3c-2 1-3.5 3.5-3.5 7 0 2 1.5 3 3.5 3"/></svg>Cibo</button>
+    <button role="tab" id="tab-coach" data-tab="coach" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="15" r="5"/><path d="M8.5 3.5l3.5 6.5 3.5-6.5M12 13v4"/></svg>Coach</button>
+    <button role="tab" id="tab-prog" data-tab="prog" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M4 19h16M5 15l4-4 3 3 7-7"/><path d="M15 7h4v4"/></svg>Progressi</button>
+    <button role="tab" id="tab-body" data-tab="body" aria-selected="false"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 10a3 3 0 0 1 6 0M12 10l1.5-2"/></svg>Corpo</button>
+    <button role="tab" id="tab-notes" data-tab="notes" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M4 6.5l1.8 1.8L9 5M4 12.5l1.8 1.8L9 11M4 18.5l1.8 1.8L9 17M12 7h8M12 13h8M12 19h5"/></svg>Note</button>
+  </div>
+</nav>
+<div class="login" id="login" hidden>
+  <div class="login-box">
+    <div class="eyebrow">Benvenuto</div>
+    <h1>Diario Olimpo</h1>
+    <div class="meander" aria-hidden="true"></div>
+    <p class="small muted" id="l-msg">Entra con l'email e la password del tuo account. Lo fai una volta sola, poi l'app si ricorda di te.</p>
+    <form id="l-form">
+      <label class="fld">Email<input id="l-email" type="email" autocomplete="username" autocapitalize="off" required></label>
+      <label class="fld">Password<input id="l-pass" type="password" autocomplete="current-password" required></label>
+      <button class="btn" id="l-go" type="submit">Entra</button>
+    </form>
+  </div>
+</div>
+
+<script src="vendor/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>
