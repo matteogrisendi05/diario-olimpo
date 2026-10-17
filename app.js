@@ -55,6 +55,7 @@ const state = { sessions: [], body: [], profile: [], nutrition: [], intake: [], 
 let draft = null, dirty = false, saveTimer = null;
 
 const $ = id => document.getElementById(id);
+const arr = v => Array.isArray(v) ? v : [];
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const num = v => { const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) ? n : NaN; };
 const r1 = n => Math.round(n * 10) / 10;
@@ -67,7 +68,12 @@ const MM = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott"
 const longDate = iso => { const d = new Date(iso + "T12:00:00"); return `${GG[d.getDay()]} ${d.getDate()} ${MM[d.getMonth()]}`; };
 const mmss = s => Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 function lsGet(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } }
-function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+// The phone's storage can fill up (photos waiting to be sent): saving then fails, so it is shown in the sync label.
+let storageFull = false;
+function lsSet(k, v) {
+  try { localStorage.setItem(k, JSON.stringify(v)); if (k === "olimpo-outbox") storageFull = false; return true; }
+  catch (e) { if (k === "olimpo-outbox" || k === "olimpo-cache") { storageFull = true; if (typeof syncLabel === "function") syncLabel(); } return false; }
+}
 
 /* ---------- store: local-first, synced to Supabase ---------- */
 // Every change is applied to the phone's copy first, queued in an outbox,
@@ -85,6 +91,7 @@ function setSync(text, off) {
   el.setAttribute("aria-label", text + (off ? ". Tocca per riprovare." : ""));
 }
 function syncLabel() {
+  if (storageFull) return setSync("Memoria dell'app piena: collegati a internet per inviare le foto in attesa", true);
   if (!sb) return setSync("Non collegata al cloud: dati solo su questo telefono", true);
   if (!uid) return setSync("Accesso non fatto · tocca per entrare", true);
   if (refused.size) return setSync(`${refused.size} ${refused.size === 1 ? "modifica rifiutata" : "modifiche rifiutate"} dal database · tocca per riprovare`, true);
@@ -103,19 +110,23 @@ function enqueue(op) {
   outbox = outbox.filter(o => !(o.coll === op.coll && o.id === op.id));
   outbox.push(op); lsSet("olimpo-outbox", outbox);
 }
-async function put(coll, id, data) { applyLocal(coll, id, data); enqueue({ op: "put", coll, id, data }); onData(); flush(); }
-async function del(coll, id) { applyLocal(coll, id, null); enqueue({ op: "del", coll, id }); onData(); flush(); }
+// The change is queued and sent first, then the screens are redrawn: a drawing error can never block sending.
+async function put(coll, id, data) { applyLocal(coll, id, data); enqueue({ op: "put", coll, id, data }); flush(); onData(); }
+async function del(coll, id) { applyLocal(coll, id, null); enqueue({ op: "del", coll, id }); flush(); onData(); }
 // A patch changes some fields of a photo still waiting for the agent, keeping the image already
 // on the server. If the agent has analysed it in the meantime, the patch is dropped.
 async function sendPatch(o) {
   const q = () => sb.from("docs").select("data").match({ user_id: uid, coll: o.coll, id: o.id }).eq("data->>status", "pending");
   const cur = await q();
+  if (!cur.error && !cur.data.length) photoMsg("Una voce era già stata analizzata dal nutrizionista: la modifica al testo non è stata applicata.", "err");
   if (cur.error || !cur.data.length) return { error: cur.error };
   return sb.from("docs").update({ data: { ...cur.data[0].data, ...o.data }, updated_at: new Date().toISOString() })
     .match({ user_id: uid, coll: o.coll, id: o.id }).eq("data->>status", "pending");
 }
+let flushAgain = false;   // a change arrived while sending: send again at the end
 async function flush() {
-  if (!sb || !uid || syncing || !navigator.onLine) { syncLabel(); return; }
+  if (syncing) { flushAgain = true; return; }
+  if (!sb || !uid || !navigator.onLine) { syncLabel(); return; }
   syncing = true; syncLabel();
   try {
     for (const o of [...outbox]) {
@@ -132,18 +143,34 @@ async function flush() {
       refused.delete(key);
       outbox = outbox.filter(x => x !== o); lsSet("olimpo-outbox", outbox);
     }
-  } catch (e) { console.warn("sync", e); }
-  finally { syncing = false; syncLabel(); }
+  } catch (e) { console.warn("sync", e); flushAgain = false; }   // offline: the next "online"/reopen retries
+  finally { syncing = false; syncLabel(); if (flushAgain) { flushAgain = false; setTimeout(flush, 0); } }
 }
+// Supabase returns at most 1000 rows per request: read page by page.
+async function fetchAll(make) {
+  const out = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await make().range(from, from + 999);
+    if (error) return { error };
+    out.push(...data); if (data.length < 1000) return { data: out };
+  }
+}
+// Daily plans and coach reports are big: only the last 60 days are downloaded, older ones stay as saved on the phone.
+const RECENT = ["nutrition", "coach"], recentFrom = () => shiftDate(today(), -60);
+let lastPull = 0;
 async function pull() {
   if (!sb || !uid || !navigator.onLine) return;
+  const from = recentFrom();
   // Photo images are not downloaded back: the phone already has its thumbnails.
-  const { data, error } = await sb.from("docs").select("coll,id,data").neq("coll", "photo");
-  const ph = await sb.from("docs").select("coll,id,date:data->>date,time:data->>time,note:data->>note,status:data->>status,text_only:data->text_only,items:data->items,kcal:data->kcal,protein:data->protein,carbs:data->carbs,fat:data->fat,ai_note:data->>ai_note").eq("coll", "photo");
-  if (!error && !ph.error) for (const r of ph.data) { const { coll, id, ...rest } = r; data.push({ coll, id, data: rest }); }
+  const { data, error } = await fetchAll(() => sb.from("docs").select("coll,id,data").neq("coll", "photo").or(`coll.not.in.(${RECENT.join(",")}),id.gte.${from}`).order("coll").order("id"));
+  const ph = await fetchAll(() => sb.from("docs").select("coll,id,date:data->>date,time:data->>time,note:data->>note,status:data->>status,text_only:data->text_only,items:data->items,kcal:data->kcal,protein:data->protein,carbs:data->carbs,fat:data->fat,ai_note:data->>ai_note").eq("coll", "photo").order("coll").order("id"));
   if (error) { console.warn("pull", error); return; }
+  lastPull = Date.now();
+  if (!ph.error) for (const r of ph.data) { const { coll, id, ...rest } = r; data.push({ coll, id, data: rest }); }
   const pending = new Set(outbox.map(o => o.coll + "/" + o.id));
   const next = Object.fromEntries(Object.keys(state).map(k => [k, []]));
+  if (ph.error) next.photo = state.photo.filter(p => !pending.has("photo/" + p.id));   // keep the list on screen if photos failed this time
+  for (const k of RECENT) next[k] = state[k].filter(x => x.id < from && !pending.has(k + "/" + x.id));
   for (const r of data) {
     if (!next[r.coll]) continue;
     const patch = outbox.find(o => o.op === "patch" && o.coll === r.coll && o.id === r.id);
@@ -187,25 +214,37 @@ async function initStore() {
   });
   window.addEventListener("online", resync);
   window.addEventListener("offline", syncLabel);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") resync(); });
+  // Coming back to the app: changes are always sent, the download repeats at most every 5 minutes.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (Date.now() - lastPull > 5 * 60e3) resync(); else flush(); } });
 }
+// A new version of the app was installed while it was open: offer to reload (the draft is kept on the phone).
+if ("serviceWorker" in navigator) {
+  let hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController) $("upd").hidden = false; hadController = true; });
+}
+$("upd").addEventListener("click", () => { flushPending(); location.reload(); });
 $("sync").addEventListener("click", () => { if (sb && !uid) showLogin(); else { refused.clear(); resync(); } });
 
 // Food and notes are not rebuilt while a text field in them is being typed in,
 // and right after a text field is saved the rebuild waits a moment so the next tap isn't lost.
-const typingIn = sel => { const a = document.activeElement; return !!(a && a.tagName === "TEXTAREA" && a.closest(sel)); };
+const typingIn = sel => { const a = document.activeElement; return !!(a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && a.type !== "date")) && a.closest(sel)); };
 let deferDiary = false, diaryTimer = null;
 function renderDiary() {
-  if (!typingIn("#v-food")) renderFood();
-  if (!typingIn("#v-notes")) renderNotes();
+  if (!typingIn("#v-food")) safe(renderFood);
+  if (!typingIn("#v-notes")) safe(renderNotes);
 }
+// Each screen is drawn on its own: data written in an unexpected shape (e.g. by an agent) breaks one card, not the app.
+const safe = fn => { try { fn(); } catch (e) { console.warn("render", fn.name || "", e); } };
+let workNames = "";
 function onData() {
-  if (!dirty) { draft = buildDraft(draft ? draft.date : today(), draft ? draft.plan : defaultPlan(today())); renderWork(); }
-  else if ((draft.extra || []).length && !(document.activeElement && document.activeElement.closest("#w-list"))) renderWork();   // names of your own exercises arrive with the data
-  else refreshHints();
-  renderProg(); renderBody(); renderRun(); fillProfile(); renderToday();
-  if (!$("v-arch").hidden) renderArch();
-  if (!$("v-coach").hidden) renderCoach();
+  const names = JSON.stringify(exLib().list);   // the names of your own exercises arrive with the data
+  if (!dirty) safe(() => { draft = buildDraft(draft ? draft.date : today(), draft ? draft.plan : defaultPlan(today())); renderWork(); });
+  else if ((draft.extra || []).length && names !== workNames && !(document.activeElement && document.activeElement.closest("#w-list"))) safe(renderWork);
+  else safe(refreshHints);
+  workNames = names;
+  for (const f of [renderProg, renderBody, renderRun, fillProfile, renderToday]) safe(f);
+  if (!$("v-arch").hidden) safe(renderArch);
+  if (!$("v-coach").hidden) safe(renderCoach);
   clearTimeout(diaryTimer);
   if (deferDiary) { deferDiary = false; diaryTimer = setTimeout(renderDiary, 350); } else renderDiary();
 }
@@ -235,7 +274,8 @@ const exLib = () => { const l = state.profile.find(x => x.id === "exercises") ||
 function saveLib(mutate) { const l = JSON.parse(JSON.stringify(exLib())); mutate(l); put("profile", "exercises", l); }
 const customDef = c => ({ id: c.id, n: c.n, s: 3, lo: 8, hi: 12, inc: 2.5, rest: c.mode === "time" ? 60 : 90, start: 0, custom: true, cue: "Esercizio aggiunto da te, fuori scheda." });
 const exDef = id => EX[id] || customDef(exLib().list.find(c => c.id === id) || { id, n: id });
-const modeOf = id => exLib().modes[id] || (exLib().list.find(c => c.id === id) || {}).mode || "reps";
+// Plan exercises are always kg × reps (their history and progression depend on it); only your own can be timed.
+const modeOf = id => EX[id] ? "reps" : exLib().modes[id] || (exLib().list.find(c => c.id === id) || {}).mode || "reps";
 const isTime = id => modeOf(id) === "time";
 // Seconds typed as "45" or "1:30".
 const parseSec = v => { const s = String(v || "").trim().replace(",", "."), m = /^(\d+):(\d{1,2})$/.exec(s); return m ? +m[1] * 60 + +m[2] : Math.round(num(s)); };
@@ -340,7 +380,7 @@ function exCard(ex) {
       </div>`).join("")}
     </div>
     ${t ? `<button class="btn ghost sw${sw ? " on" : ""}" data-sw="${ex.id}">${sw ? `■ Ferma · <span id="sw-t">${mmss(Math.floor((Date.now() - stopwatch.start) / 1000))}</span>` : `⏱ Cronometra la serie ${Math.min(rows.length, rows.filter(x => x.done).length + 1)}`}</button>` : ""}
-    <div class="ex-actions"><button class="lnk" data-add="${ex.id}">+ Serie</button>${rows.length > 1 ? `<button class="lnk danger" data-rm="${ex.id}">− Serie</button>` : ""}<button class="lnk" data-mode="${ex.id}">${t ? "Passa a kg × rip." : "Passa a tempo"}</button><button class="lnk danger" data-drop="${ex.id}">Togli</button></div>
+    <div class="ex-actions"><button class="lnk" data-add="${ex.id}">+ Serie</button>${rows.length > 1 ? `<button class="lnk danger" data-rm="${ex.id}">− Serie</button>` : ""}${ex.custom ? `<button class="lnk" data-mode="${ex.id}">${t ? "Passa a kg × rip." : "Passa a tempo"}</button>` : ""}<button class="lnk danger" data-drop="${ex.id}">Togli</button></div>
   </article>`;
 }
 // Stopwatch for timed sets: it fills the seconds of the first set not done yet and ticks it.
@@ -348,8 +388,11 @@ let stopwatch = null, swInt = null;
 function stopStopwatch(save) {
   clearInterval(swInt);
   const s = stopwatch; stopwatch = null; if (!s) return;
-  const ex = curEx(s.ex), rows = draft.sets[s.ex], i = rows.findIndex(x => !x.done);
+  const ex = curEx(s.ex), rows = draft.sets[s.ex];
   const sec = Math.round((Date.now() - s.start) / 1000);
+  // all sets already ticked: the timed one becomes an extra set instead of being thrown away
+  if (save && sec > 0 && rows.every(x => x.done)) rows.push({ kg: rows.length ? rows[rows.length - 1].kg : "0", reps: "", sec: "", done: false });
+  const i = rows.findIndex(x => !x.done);
   if (save && sec > 0 && i >= 0) {
     rows[i].sec = secStr(sec); rows[i].done = true;
     dirty = true; keepDraft(); scheduleSave();
@@ -401,18 +444,26 @@ $("w-list").addEventListener("click", e => {
     swInt = setInterval(() => { const el = $("sw-t"); if (el && stopwatch) el.textContent = mmss(Math.floor((Date.now() - stopwatch.start) / 1000)); }, 250);
     return rerenderCard(b.dataset.sw);
   }
+  // Changing the measure or taking an exercise out would drop sets already ticked: ask first.
+  const ticked = id => (draft.sets[id] || []).some(x => x.done);
   if (b.dataset.mode) {
     const id = b.dataset.mode, next = isTime(id) ? "reps" : "time";
-    if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
-    saveLib(l => { l.modes[id] = next; const c = l.list.find(x => x.id === id); if (c) c.mode = next; });
-    dirty = true; keepDraft(); rerenderCard(id); scheduleSave(); return;
+    const go = () => {
+      if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
+      saveLib(l => { l.modes[id] = next; const c = l.list.find(x => x.id === id); if (c) c.mode = next; });
+      dirty = true; keepDraft(); rerenderCard(id); scheduleSave();
+    };
+    return ticked(id) ? armDelete(b, go) : go();
   }
   if (b.dataset.drop) {
     const id = b.dataset.drop;
-    if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
-    if ((draft.extra || []).includes(id)) { draft.extra = draft.extra.filter(x => x !== id); delete draft.sets[id]; }
-    else draft.skip = [...(draft.skip || []), id];
-    dirty = true; keepDraft(); renderWork(); scheduleSave(); return;
+    const go = () => {
+      if (stopwatch && stopwatch.ex === id) stopStopwatch(false);
+      if ((draft.extra || []).includes(id)) { draft.extra = draft.extra.filter(x => x !== id); delete draft.sets[id]; }
+      else draft.skip = [...(draft.skip || []), id];
+      dirty = true; keepDraft(); renderWork(); scheduleSave();
+    };
+    return ticked(id) ? armDelete(b, go) : go();
   }
   const exId = b.dataset.ex || b.dataset.chk || b.dataset.add || b.dataset.rm; if (!exId) return;
   const ex = curEx(exId), rows = draft.sets[exId];
@@ -463,7 +514,7 @@ $("w-new-add").addEventListener("click", () => {
     const known = exLib().list.find(c => c.n.toLowerCase() === name.toLowerCase());
     id = known ? known.id : "c_" + (slug(name) || Date.now().toString(36));
     saveLib(l => { if (!l.list.some(c => c.id === id)) l.list.push({ id, n: name, mode }); l.modes[id] = mode; });
-  } else saveLib(l => { l.modes[id] = mode; });
+  }   // an exercise of the plan keeps kg × reps whatever is chosen here
   $("w-new-n").value = "";
   addToSession(id);
 });
@@ -475,20 +526,32 @@ $("w-date").addEventListener("change", e => { if (e.target.value) switchTo(e.tar
 /* ---------- rest timer ---------- */
 let tEnd = 0, tInt = null, wake = null;
 function startTimer(sec, what) {
-  tEnd = Date.now() + sec * 1000; $("t-what").textContent = what; $("timer").hidden = false; $("timer").classList.remove("go");
+  tEnd = Date.now() + sec * 1000; $("t-what").textContent = what; $("timer").hidden = false; $("timer").classList.remove("go"); $("t-say").textContent = ""; calmCheck();
   clearInterval(tInt); tInt = setInterval(tick, 250); tick();
   try { if (navigator.wakeLock && !wake) navigator.wakeLock.request("screen").then(w => { wake = w; w.addEventListener("release", () => wake = null); }).catch(() => {}); } catch (e) {}
 }
 function tick() {
   const left = Math.max(0, Math.ceil((tEnd - Date.now()) / 1000));
   $("t-left").textContent = left ? mmss(left) : "Vai!";
+  // VoiceOver hears the start and "Vai!", not every second
+  const say = left ? `Recupero di ${mmss(left)}` : "Vai!";
+  if (!left ? $("t-say").textContent !== "Vai!" : !$("t-say").textContent) $("t-say").textContent = say;
   if (!left) { $("timer").classList.add("go"); if (Date.now() - tEnd > 15000) stopTimer(); }
 }
 function stopTimer() {
-  clearInterval(tInt); $("timer").hidden = true;
+  clearInterval(tInt); $("timer").hidden = true; $("t-say").textContent = ""; calmCheck();
   if (wake) { wake.release().catch(() => {}); wake = null; }
 }
 $("t-stop").addEventListener("click", stopTimer);
+// Battery: the background aurora stops during the rest timer and after 20 s without touching the screen.
+let idleT = null;
+function calmCheck() {
+  clearTimeout(idleT);
+  document.body.classList.toggle("calm", !$("timer").hidden);
+  idleT = setTimeout(() => document.body.classList.add("calm"), 20000);
+}
+for (const ev of ["pointerdown", "keydown", "scroll"]) window.addEventListener(ev, calmCheck, { passive: true });
+calmCheck();
 $("t-add").addEventListener("click", () => { tEnd = Math.max(tEnd, Date.now()) + 30000; $("timer").classList.remove("go"); tick(); });
 
 /* ---------- charts ---------- */
@@ -613,15 +676,22 @@ function renderSport() {
 }
 $("s-sport").addEventListener("click", e => { const b = e.target.closest("button[data-sport]"); if (b) { sport = b.dataset.sport; lsSet("olimpo-sport", sport); renderSport(); } });
 $("s-list").addEventListener("click", e => { const b = e.target.closest("button[data-sday]"); if (b) { showTab("notes"); notesDate = b.dataset.sday; renderNotes(); } });
+// First tap arms the button ("Sicuro?"), a second tap within 4 s runs the action.
 function armDelete(btn, run) {
-  if (btn.dataset.armed) { btn.disabled = true; run().catch(() => { btn.disabled = false; btn.textContent = "Riprova"; }); return; }
+  if (btn.dataset.armed) { btn.disabled = true; Promise.resolve().then(run).catch(() => { btn.disabled = false; btn.textContent = "Riprova"; }); return; }
+  const label = btn.textContent;
   btn.dataset.armed = "1"; btn.textContent = "Sicuro?";
-  setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "Elimina"; } }, 4000);
+  setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = label; } }, 4000);
+}
+// Deleting the session open in Palestra also resets its draft, or the draft would save it again.
+function delSession(id) {
+  del("sessions", id);
+  if (draft && draft.date + "-" + draft.plan === id) { draft = buildDraft(draft.date, draft.plan); dirty = false; keepDraft(); renderWork(); }
 }
 $("g-hist").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.open) { const s = state.sessions.find(x => x.id === b.dataset.open); if (s) { switchTo(s.date, s.plan); showTab("work"); } }
-  if (b.dataset.del) armDelete(b, () => del("sessions", b.dataset.del));
+  if (b.dataset.del) armDelete(b, () => delSession(b.dataset.del));
 });
 
 /* ---------- body view ---------- */
@@ -657,25 +727,30 @@ function renderBody() {
   $("b-table").innerHTML = asc.length ? [...asc].reverse().map(x => `<div class="li"><div class="t"><b>${longDate(x.date)}</b><span>${x.weight ? fk(x.weight) + " kg" : "—"} · ${x.waist ? "vita " + fk(x.waist) : "vita —"}${x.neck ? " · collo " + fk(x.neck) : ""}${navy(x) !== null ? " · " + fk(navy(x)) + "% grasso" : ""}${x.shoulders ? " · spalle " + fk(x.shoulders) : ""}</span></div><div class="acts"><button class="lnk" data-bedit="${x.id}">Modifica</button><button class="lnk danger" data-bdel="${x.id}">Elimina</button></div></div>`).join("") : `<p class="empty">Nessuna misurazione ancora.</p>`;
 }
 $("b-date").value = today();
+const BODY_F = { weight: "b-w", waist: "b-waist", neck: "b-neck", shoulders: "b-sh", chestc: "b-chestc", arm: "b-arm", thighc: "b-thighc", calf: "b-calf" };
+let bodyEditId = null;   // measurement being edited: its fields are replaced exactly, and a new date moves it
 $("b-save").addEventListener("click", async () => {
-  const date = $("b-date").value || today(), m = $("b-msg");
-  const F = { weight: "b-w", waist: "b-waist", neck: "b-neck", shoulders: "b-sh", chestc: "b-chestc", arm: "b-arm", thighc: "b-thighc", calf: "b-calf" };
+  const date = $("b-date").value || today(), m = $("b-msg"), F = BODY_F;
   const val = {}; for (const k in F) val[k] = num($(F[k]).value);
   if (!Object.keys(F).some(k => isFinite(val[k]))) { m.textContent = "Scrivi almeno una misura."; m.className = "savemsg err"; return; }
   if (isFinite(val.waist) && (val.waist < 50 || val.waist > 160)) { m.textContent = "Il giro vita sembra strano: controlla i centimetri."; m.className = "savemsg err"; return; }
   if (isFinite(val.neck) && (val.neck < 25 || val.neck > 60)) { m.textContent = "Il giro collo sembra strano: controlla i centimetri."; m.className = "savemsg err"; return; }
-  const prev = state.body.find(x => x.id === date) || {};
+  // New measurement: adds to what was already saved that day. Edit: what you see is what is saved.
+  const prev = bodyEditId ? {} : state.body.find(x => x.id === date) || {};
   const doc = { date };
   for (const k in F) doc[k] = isFinite(val[k]) ? val[k] : (prev[k] ?? null);
   try {
+    const moved = bodyEditId && bodyEditId !== date ? bodyEditId : null;
     await put("body", date, doc);
-    m.textContent = "Misurazione salvata."; m.className = "savemsg ok";
+    if (moved) await del("body", moved);
+    m.textContent = bodyEditId ? "Misurazione aggiornata." : "Misurazione salvata."; m.className = "savemsg ok";
     for (const k in F) $(F[k]).value = "";
+    bodyEditId = null;
   } catch (e) { m.textContent = "Non sono riuscito a salvare. Riprova tra poco."; m.className = "savemsg err"; }
 });
-const BODY_F = { weight: "b-w", waist: "b-waist", neck: "b-neck", shoulders: "b-sh", chestc: "b-chestc", arm: "b-arm", thighc: "b-thighc", calf: "b-calf" };
 function editBody(id) {
   const x = state.body.find(b => b.id === id); if (!x) return;
+  bodyEditId = x.id;
   $("b-date").value = x.date;
   for (const k in BODY_F) $(BODY_F[k]).value = x[k] != null ? fk(x[k]) : "";
   if (["shoulders", "chestc", "arm", "thighc", "calf"].some(k => x[k] != null)) $("b-sh").closest("details").open = true;
@@ -723,9 +798,11 @@ function entryFor(obj, i, name) {
   if (a && (!a.name || a.name === name)) return a;
   return Object.values(obj).find(x => x && x.name === name) || {};
 }
+// An entry with no status keeps what was typed (text, numbers), so un-ticking never deletes it.
 function setEntry(obj, i, name, val) {
   for (const k of Object.keys(obj)) if (k !== String(i) && obj[k] && obj[k].name === name) delete obj[k];
-  obj[i] = val.status ? { name, ...val } : {};
+  const has = Object.entries(val).some(([k, v]) => k !== "name" && k !== "kind" && v !== undefined && v !== "");
+  obj[i] = has ? { name, ...val } : {};
 }
 // Free text is saved while typing (short pause) and flushed when the app goes to the background.
 let pendingText = null, textTimer = null;
@@ -748,7 +825,7 @@ function renderFood() {
   const adj = plan && plan.adjustment;
   $("f-adj").hidden = !(adj && adj.reason);
   if (adj && adj.reason) $("f-adj").innerHTML = `<h3>Aggiustato su ieri</h3><div class="small">${adj.today_change ? `<b>${adj.today_change > 0 ? "+" : ""}${Math.round(adj.today_change)} kcal</b> · ` : ""}${esc(adj.reason)}</div>`;
-  const al = (plan && plan.avvisi) || [], ch = (plan && plan.modifiche) || [];
+  const al = arr(plan && plan.avvisi), ch = arr(plan && plan.modifiche);
   $("f-alerts").hidden = !al.length;
   $("f-alerts").innerHTML = `<h3>Attenzione</h3>${al.map(a => `<div class="warn-item ${a.livello === "alto" ? "alta" : "media"}">${esc(a.testo || "")}</div>`).join("")}`;
   $("f-changes").hidden = !ch.length;
@@ -789,7 +866,7 @@ $("f-meals").addEventListener("click", e => {
   const mi = b.dataset.meal, st = b.dataset.st, name = mealName(mi);
   saveIntake(cur => {
     const prev = entryFor(cur.meals, mi, name);
-    setEntry(cur.meals, mi, name, prev.status === st ? {} : { status: st, text: st === "diff" ? (prev.text || "") : "" });
+    setEntry(cur.meals, mi, name, { ...prev, status: prev.status === st ? undefined : st });
   });
   if (st === "diff") setTimeout(() => { const t = document.querySelector(`textarea[data-meal="${mi}"]`); if (t) t.focus(); }, 50);
 });
@@ -861,23 +938,24 @@ function patchPhoto(id, fields) {
   const cur = state.photo.find(p => p.id === id);
   if (!cur || cur.status === "done") return false;
   applyLocal("photo", id, { ...cur, ...fields });
+  // A new queued change, never an edit of one that may already be on its way (that one would drop the edit when done).
   const queued = outbox.find(o => o.coll === "photo" && o.id === id && o.op !== "del");
-  if (queued) { Object.assign(queued.data, fields); lsSet("olimpo-outbox", outbox); }
-  else enqueue({ op: "patch", coll: "photo", id, data: fields });
+  enqueue(queued ? { ...queued, data: { ...queued.data, ...fields } } : { op: "patch", coll: "photo", id, data: fields });
   onData(); flush(); return true;
 }
 let phEdit = null, phDraft = null;   // entry being edited and its unsaved text (kept across re-renders)
 $("f-photo-list").addEventListener("input", e => { if (e.target.id === "f-ph-edit") phDraft = e.target.value; });
 $("f-photo-list").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.phdel) return armDelete(b, async () => del("photo", b.dataset.phdel));
+  if (b.dataset.phdel) return armDelete(b, async () => { const id = b.dataset.phdel, t = getThumbs(); if (t[id]) { delete t[id]; lsSet(THUMBS_KEY, t); } del("photo", id); });
   if (b.dataset.phedit) { phEdit = b.dataset.phedit; phDraft = null; renderFood(); const t = $("f-ph-edit"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } return; }
   if (b.dataset.phcancel) { phEdit = phDraft = null; return renderFood(); }
   if (b.dataset.phsave) {
     const t = $("f-ph-edit"), p = state.photo.find(x => x.id === b.dataset.phsave);
     if (p && p.text_only && !t.value.trim()) { photoMsg("Il testo non può essere vuoto: se vuoi toglierlo usa Elimina.", "err"); return; }
     phEdit = phDraft = null;
-    photoMsg(patchPhoto(b.dataset.phsave, { note: t.value.trim() }) ? "Testo aggiornato." : "Il nutrizionista l'ha già analizzato: non si può più modificare.", "ok");
+    const ok = patchPhoto(b.dataset.phsave, { note: t.value.trim() });
+    photoMsg(ok ? "Testo aggiornato." : "Il nutrizionista l'ha già analizzato: non si può più modificare.", ok ? "ok" : "err");
     renderFood();
   }
 });
@@ -932,7 +1010,7 @@ function renderHome() {
   const h = state.profile.find(x => x.id === "habits");
   $("f-habits").hidden = !h;
   if (!h) return;
-  const fr = h.frequenti || [], ok = h.bene || [], md = h.modifiche || [], sp = h.spesa || [];
+  const fr = arr(h.frequenti), ok = arr(h.bene), md = arr(h.modifiche), sp = arr(h.spesa);
   $("f-habits").innerHTML = `<h3>Le tue abitudini</h3><div class="small muted">Imparate dal nutrizionista da foto, testi e diario${h.giorni_con_dati ? ` (${h.giorni_con_dati} giorni di dati)` : ""}. Le usa per proporti piatti simili ai tuoi.</div>
     ${h.base ? `<p>${esc(h.base)}</p>` : ""}
     ${fr.length ? `<div class="chips">${fr.map(f => `<span class="chip">${esc(f.food || "")}${f.giorni ? ` · ${f.giorni} gg` : ""}</span>`).join("")}</div>` : ""}
@@ -1013,7 +1091,8 @@ $("n-list").addEventListener("click", e => {
   const i = b.dataset.act, st = b.dataset.st, name = activitiesFor(notesDate).list[i], game = /partita|calcetto/.test(actKind(name) || "");
   saveIntake(cur => {
     const prev = entryFor(cur.activities, i, name);
-    setEntry(cur.activities, i, name, prev.status === st ? {} : { ...prev, kind: actKind(name) || undefined, status: st, note: st === "ok" && !game ? "" : (prev.note || "") });
+    setEntry(cur.activities, i, name, prev.status === st ? { ...prev, status: undefined }
+      : { ...prev, kind: actKind(name) || undefined, status: st, note: st === "ok" && !game ? "" : (prev.note || "") });
   }, notesDate);
   if (st !== "ok") setTimeout(() => { const t = document.querySelector(`textarea[data-act="${i}"]`); if (t) t.focus(); }, 50);
 });
@@ -1199,7 +1278,7 @@ $("a-filter").addEventListener("click", e => { const b = e.target.closest("butto
 $("a-more").addEventListener("click", () => { archDays += 30; renderArch(); });
 $("a-list").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.adel) { const [coll, id] = b.dataset.adel.split(/:(.+)/); armDelete(b, () => del(coll, id)); return; }
+  if (b.dataset.adel) { const [coll, id] = b.dataset.adel.split(/:(.+)/); armDelete(b, () => coll === "sessions" ? delSession(id) : del(coll, id)); return; }
   if (!b.dataset.aedit) return;
   const [kind, id] = b.dataset.aedit.split(/:(.+)/);
   if (kind === "gym") { const s = state.sessions.find(x => x.id === id); if (s) { switchTo(s.date, s.plan); showTab("work"); } }
@@ -1233,19 +1312,21 @@ function renderCoach() {
   $("c-datelbl").textContent = coachDate === today() ? "Oggi" : longDate(coachDate);
   if (!r) {
     $("c-headline").textContent = ""; $("c-today").textContent = "";
-    $("c-body").innerHTML = `<div class="card"><p class="empty">${coachDate >= today() ? "Il report dell'allenatore arriva ogni mattina verso le 5 (alle 4 con l'ora solare)." : "Nessun report salvato per questo giorno."}</p></div>`;
+    $("c-body").innerHTML = `<div class="card"><p class="empty">${!state.coach.length ? "L'allenatore non è ancora attivo: parte dopo la configurazione del database (coach.sql). Da lì scrive il report ogni mattina verso le 5."
+      : coachDate >= today() ? "Il report dell'allenatore arriva ogni mattina verso le 5 (alle 4 con l'ora solare)." : "Nessun report salvato per questo giorno."}</p></div>`;
     return;
   }
   $("c-headline").textContent = r.headline || "";
-  $("c-today").innerHTML = `${r.livello_giorno ? `<span class="lvl ${esc(r.livello_giorno)}">${esc(LVL[r.livello_giorno] || r.livello_giorno)}</span> ` : ""}${esc((r.oggi || []).join(" · ") || "Nessun allenamento oggi")}`;
-  const c = r.carico || {}, run = r.corsa || {}, body = r.corpo || {}, out = [];
-  const av = r.avvisi || [], mg = r.miglioramenti || [], pg = r.progressione || [], cs = r.consigli || [], rq = r.richieste_al_nutrizionista || [];
+  $("c-today").innerHTML = `${r.livello_giorno ? `<span class="lvl ${esc(r.livello_giorno)}">${esc(LVL[r.livello_giorno] || r.livello_giorno)}</span> ` : ""}${esc(arr(r.oggi).join(" · ") || "Nessun allenamento oggi")}`;
+  const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  const c = obj(r.carico), run = obj(r.corsa), body = obj(r.corpo), out = [];
+  const av = arr(r.avvisi), mg = arr(r.miglioramenti), pg = arr(r.progressione), cs = arr(r.consigli), rq = arr(r.richieste_al_nutrizionista);
   if (av.length) out.push(`<div class="card prose adj"><h3>Avvisi</h3>${av.map(a => `<div class="warn-item ${esc(a.gravita || "")}">${esc(a.messaggio || "")} ${srcTag(a.fonte_id)}</div>`).join("")}</div>`);
   if (mg.length) out.push(`<div class="card prose"><h3>Come stai migliorando</h3><ul>${mg.map(m => `<li>${m.area ? `<b>${esc(m.area[0].toUpperCase() + m.area.slice(1))}</b> · ` : ""}${esc(m.testo || "")}</li>`).join("")}</ul></div>`);
   if (cs.length || rq.length) out.push(`<div class="card prose"><h3>Per oggi</h3><ul>${cs.map(x => `<li>${esc(x.testo || "")} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>
     ${rq.length ? `<div class="small muted">Chiesto al nutrizionista</div><ul>${rq.map(x => `<li><b>${esc(x.esigenza || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}</div>`);
   if (pg.length) out.push(`<div class="card"><h3>Progressione in palestra</h3><div class="small muted">↑ = hai chiuso tutte le serie al massimo delle ripetizioni: si sale di carico.</div><div class="list coach-prog">${pg.map(p => `<div class="li"><div class="t"><b>${esc(p.esercizio || "")}</b><span>${esc(p.ultimo || "")}${p.obiettivo ? ` · obiettivo ${esc(p.obiettivo)}` : ""}</span></div><b${p.pronto ? ' class="ok"' : ""}>${p.pronto ? "↑ " : ""}${esc(p.proposta || "")}</b></div>`).join("")}</div></div>`);
-  const sp = r.sport || {}, bp = sp.basket_partite, cc = sp.calcetto, ab = sp.allenamenti_basket_4sett;
+  const sp = obj(r.sport), bp = sp.basket_partite, cc = sp.calcetto, ab = sp.allenamenti_basket_4sett;
   if (bp || cc || (ab && ab.totale)) out.push(`<div class="card"><h3>Basket e calcetto</h3><div class="list">
     ${bp ? `<div class="li"><div class="t"><b>Partite di basket · ${bp.partite}</b><span>Ultima ${ddmm(bp.ultima.date)}: ${bp.ultima.pts ?? "—"} punti in ${bp.ultima.min ?? "—"}'</span></div><b>${bp.media_pts != null ? fk(bp.media_pts) + " pt" : "—"}</b></div>` : ""}
     ${cc ? `<div class="li"><div class="t"><b>Calcetto · ${cc.partite}</b><span>Ultima ${ddmm(cc.ultima.date)}: ${cc.ultima.gol ?? 0} gol, ${cc.ultima.ast ?? 0} assist</span></div><b>${cc.media_gol != null ? fk(r1((cc.media_gol || 0) + (cc.media_ast || 0))) + " G+A" : "—"}</b></div>` : ""}
@@ -1258,8 +1339,8 @@ function renderCoach() {
     ["Rapporto", c.rapporto != null ? fk(c.rapporto) : "—", c.dati_sufficienti ? "sicuro 0,8–1,3" : "servono 3 sett.", ratioOff],
     ["Giorni intensi", c.giorni_intensi_consecutivi ?? 0, "di fila", false]
   ].map(([k, v, d, off]) => `<div class="tile${off ? " off" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("")}</div>`);
-  if ((c.settimane || []).length) out.push(`<div class="card"><h3>Carico delle ultime 4 settimane</h3><div class="small muted">Fatica (1–10) × minuti di ogni seduta.${c.sedute_con_rpe_stimato ? ` ${c.sedute_con_rpe_stimato} ${c.sedute_con_rpe_stimato === 1 ? "seduta degli ultimi 7 giorni ha" : "sedute degli ultimi 7 giorni hanno"} la fatica stimata.` : ""}</div><div class="chart" id="c-weeks"></div></div>`);
-  if ((run.km_settimane || []).some(w => w.km)) {
+  if (arr(c.settimane).length) out.push(`<div class="card"><h3>Carico delle ultime 4 settimane</h3><div class="small muted">Fatica (1–10) × minuti di ogni seduta.${c.sedute_con_rpe_stimato ? ` ${c.sedute_con_rpe_stimato} ${c.sedute_con_rpe_stimato === 1 ? "seduta degli ultimi 7 giorni ha" : "sedute degli ultimi 7 giorni hanno"} la fatica stimata.` : ""}</div><div class="chart" id="c-weeks"></div></div>`);
+  if (arr(run.km_settimane).some(w => w && w.km)) {
     const p = run.ritmo_ultimi_14, q = run.ritmo_14_prima;
     out.push(`<div class="card"><h3>Corsa · km a settimana</h3>${p ? `<div class="small muted">Facili e lunghi, ultimi 14 giorni: ${esc(p.ritmo)}/km${p.fc_media ? ` a ${p.fc_media} bpm` : ""}${q ? ` · 14 giorni prima: ${esc(q.ritmo)}/km${q.fc_media ? ` a ${q.fc_media} bpm` : ""}` : ""}</div>` : ""}<div class="chart" id="c-km"></div></div>`);
   }
@@ -1267,9 +1348,9 @@ function renderCoach() {
   if (bk.length || body.spalle_su_vita) out.push(`<div class="card"><h3>Corpo</h3><div class="list">${bk.map(k => { const b = body[k], d = r1(b.ora - b.prima);
       return `<div class="li"><div class="t"><b>${BODY_L[k][0]}</b><span>${b.dal && b.dal !== b.al ? `dal ${ddmm(b.dal)} al ${ddmm(b.al)}` : b.al ? `misura del ${ddmm(b.al)}` : ""}</span></div><b>${fk(b.ora)} ${BODY_L[k][1]}${b.dal !== b.al && d ? ` <span class="small muted">(${d > 0 ? "+" : ""}${fk(d)})</span>` : ""}</b></div>`; }).join("")}
     ${body.spalle_su_vita ? `<div class="li"><div class="t"><b>Spalle ÷ vita</b><span>obiettivo ${fk(body.spalle_su_vita.obiettivo)}</span></div><b>${fk(body.spalle_su_vita.ora)}</b></div>` : ""}</div></div>`);
-  if ((r.prossimi_7 || []).length) out.push(`<div class="card"><h3>Prossimi 7 giorni</h3><div class="list">${r.prossimi_7.map(d => `<div class="li"><div class="t"><b>${d.date === today() ? "Oggi" : longDate(d.date)}</b><span>${esc((d.eventi || []).join(" · ") || "—")}</span></div><span class="lvl ${esc(d.livello || "")}">${esc(LVL[d.livello] || d.livello || "")}</span></div>`).join("")}</div></div>`);
+  if (arr(r.prossimi_7).length) out.push(`<div class="card"><h3>Prossimi 7 giorni</h3><div class="list">${arr(r.prossimi_7).map(d => `<div class="li"><div class="t"><b>${d.date === today() ? "Oggi" : longDate(d.date)}</b><span>${esc(arr(d.eventi).join(" · ") || "—")}</span></div><span class="lvl ${esc(d.livello || "")}">${esc(LVL[d.livello] || d.livello || "")}</span></div>`).join("")}</div></div>`);
   if (r.motivazione) out.push(`<div class="card prose"><h3>Il punto dell'allenatore</h3><p>${esc(r.motivazione)}</p></div>`);
-  const used = [...new Set([...(r.fonti || []), ...av, ...cs, ...rq].map(x => typeof x === "string" ? x : x.fonte_id).filter(Boolean))];
+  const used = [...new Set([...arr(r.fonti), ...av, ...cs, ...rq].map(x => typeof x === "string" ? x : x.fonte_id).filter(Boolean))];
   if (used.length) out.push(`<details class="card how"><summary>Fonti usate oggi</summary><ul class="prose" style="margin-top:8px">${used.map(id => { const f = FONTI[id];
       return `<li>${f && f[1] ? `<a href="${f[1]}" target="_blank" rel="noopener">${esc(f[0])}</a>` : esc(f ? f[0] : id)}</li>`; }).join("")}</ul></details>`);
   $("c-body").innerHTML = out.join("");
@@ -1295,6 +1376,9 @@ function showTab(t) {
   if (t === "food") { foodDate = today(); renderFood(); }
   if (t === "notes") { notesDate = today(); renderNotes(); }
   if (t === "run") renderRun();
+  // An edit left half-way (run or measurement) is cancelled when leaving its section, so it can't overwrite another one later.
+  if (t !== "run" && runEditId) { resetRunForm(); $("r-msg").textContent = "Modifica annullata."; $("r-msg").className = "savemsg"; }
+  if (t !== "body" && bodyEditId) { bodyEditId = null; for (const k in BODY_F) $(BODY_F[k]).value = ""; $("b-date").value = today(); $("b-msg").textContent = ""; }
   if (t === "arch") { archDays = 30; renderArch(); }
   if (t === "coach") { coachDate = today(); renderCoach(); }
   window.scrollTo(0, 0);

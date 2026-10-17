@@ -26,6 +26,7 @@
     <h1 id="h-title">Diario Olimpo</h1>
     <div class="meander" aria-hidden="true"></div>
     <button class="sync" id="sync" type="button"><i></i><span>Connessione…</span></button>
+    <button class="sync upd" id="upd" type="button" hidden><i></i><span>Nuova versione · tocca per aggiornare</span></button>
   </header>
 
   <!-- ALLENAMENTO -->
@@ -308,7 +309,8 @@
   </section>
 </div>
 
-<div class="timer" id="timer" hidden role="status" aria-live="polite"><div><b id="t-left">1:30</b><br><span id="t-what">Recupero</span></div><button id="t-add">+30″</button><button id="t-stop">Fine</button></div>
+<div class="timer" id="timer" hidden aria-label="Recupero"><div><b id="t-left" aria-hidden="true">1:30</b><br><span id="t-what">Recupero</span></div><button id="t-add">+30″</button><button id="t-stop">Fine</button></div>
+<div class="sr" id="t-say" role="status" aria-live="polite"></div>
 
 <nav class="tabbar" role="tablist" aria-label="Sezioni">
   <div class="in">

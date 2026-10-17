@@ -40,7 +40,8 @@ h1{font-family:var(--f-display);font-weight:700;font-size:2.15rem;line-height:1.
 .meander{height:12px;background:var(--gold-grad);opacity:.6;
   -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'%3E%3Cpath d='M0 11H22V1H6V8H16V4H11' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E") repeat-x left center/24px 12px;
           mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'%3E%3Cpath d='M0 11H22V1H6V8H16V4H11' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E") repeat-x left center/24px 12px}
-.sync{align-self:flex-start;font:inherit;font-size:.74rem;color:var(--muted);display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 9px;cursor:pointer;min-height:28px}
+.sync{align-self:flex-start;font:inherit;font-size:.74rem;color:var(--muted);display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 9px;cursor:pointer;min-height:44px}
+.sync.upd{margin-top:6px;color:var(--gold)} .sync.upd i{background:var(--gold);box-shadow:0 0 8px var(--gold)}
 /* all good: just a green dot; any problem: the full message, tappable */
 .sync.ok{position:absolute;top:calc(18px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));padding:0;width:var(--tap);height:var(--tap);justify-content:center;background:none;border:0}
 .sync.ok span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -107,7 +108,7 @@ details.how p{margin:8px 0 0;font-size:.86rem;color:var(--muted)}
 .sethead,.set{display:grid;grid-template-columns:22px minmax(0,1fr) 64px 46px;gap:8px;align-items:center}
 .sethead span{font-size:.64rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);text-align:center}
 .set .n{font-size:.85rem;color:var(--faint);text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
-.step{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;height:46px;overflow:hidden}
+.step{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;height:46px;overflow:hidden}
 .step button{border:0;background:transparent;font-size:1.3rem;font-weight:500;cursor:pointer;color:var(--gold)}
 .step button:active{background:var(--gold-soft)}
 .set input{border:0;background:transparent;text-align:center;font:650 17px var(--f-body);font-variant-numeric:tabular-nums;color:var(--ink);width:100%;min-width:0;padding:0}
@@ -246,20 +247,16 @@ select option{background:var(--solid);color:var(--ink)}
 /* food photos */
 .photo-btn{display:flex;align-items:center;justify-content:center;gap:10px}
 .photo-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}
-.photo-draft{display:flex;flex-direction:column;gap:10px;padding:12px;border-radius:16px;background:var(--well);box-shadow:var(--well-edge)}
-.photo-head{display:flex;gap:12px;align-items:center}
-.photo-head img,.li img.thumb{width:64px;height:64px;object-fit:cover;border-radius:12px;flex:none}
+.li img.thumb{width:64px;height:64px;object-fit:cover;border-radius:12px;flex:none}
 .li img.thumb{width:48px;height:48px;border-radius:10px}
-.photo-item{display:grid;grid-template-columns:minmax(0,1fr) 84px;gap:8px;align-items:center}
-.photo-item input{font:650 16px var(--f-body);color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:10px;height:var(--tap);width:100%;text-align:center}
-.photo-item small{display:block;color:var(--muted);font-size:.76rem}
 .photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .photo-actions .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
 .li .with-thumb{display:flex;gap:10px;align-items:center;min-width:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 /* workout: extra exercises, timed sets */
 #w-addcard{display:flex;flex-direction:column;gap:10px}
 #w-addcard .btn.ghost,.ex .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
-button.chip{cursor:pointer;min-height:36px}
+button.chip{cursor:pointer;min-height:44px;padding:6px 12px}
 .ex .sw{min-height:44px;margin-top:4px;font-size:.92rem}
 .ex .sw.on{color:var(--warn);font-variant-numeric:tabular-nums}
 .ex-actions{flex-wrap:wrap}
@@ -339,7 +336,9 @@ body::after{content:"";position:fixed;inset:-25%;z-index:-1;pointer-events:none;
 .sync:not(.ok),.datepill,.chip,.ex-top .cnt,.blocks button,.day{background:linear-gradient(145deg,rgba(255,255,255,.12),rgba(255,255,255,.04));
   border:1px solid rgba(255,255,255,.12);box-shadow:var(--glass-edge)}
 /* the aurora pauses while scrolling so the glass isn't re-blurred every frame */
-body.scrolling::after{animation-play-state:paused}
+body.scrolling::after,body.calm::after{animation-play-state:paused}
+/* tiles inside a card: no second layer of blur (same look, less work for the GPU) */
+.card .tile{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(255,255,255,.05)}
 /* comfortable touch targets (44 pt) */
 .lnk,.datepill,.seg.three button,.seg.four button,.timer button{min-height:var(--tap)}
 .tabbar .lbl,.tabbar button{font-size:.66rem}
@@ -360,10 +359,11 @@ body.scrolling::after{animation-play-state:paused}
   -webkit-backdrop-filter:blur(30px) saturate(210%) brightness(1.08);backdrop-filter:blur(30px) saturate(210%) brightness(1.08);
   border:1px solid rgba(255,255,255,.18);border-radius:32px;box-shadow:var(--glass-edge),0 18px 44px rgba(0,0,0,.5);isolation:isolate}
 .tabbar .in{position:relative;--i:0}
-.tabbar .lens{position:absolute;top:4px;bottom:4px;left:calc(4px + var(--i) * (100% - 8px) / 7);width:calc((100% - 8px) / 7);border-radius:26px;pointer-events:none;
+.tabbar .lens{position:absolute;top:4px;bottom:4px;left:4px;width:calc((100% - 8px) / 7);transform:translateX(calc(var(--i) * 100%));border-radius:26px;pointer-events:none;
   background:linear-gradient(145deg,rgba(255,255,255,.22),rgba(255,255,255,.07));
   box-shadow:inset 0 1px .5px rgba(255,255,255,.6),inset 0 -1px .5px rgba(255,255,255,.12),0 6px 16px rgba(0,0,0,.28);
-  transition:left .55s cubic-bezier(.34,1.45,.55,1)}
+  transition:transform .55s cubic-bezier(.34,1.45,.55,1)}
+@media (max-width:380px){.tabbar button{font-size:.6rem;letter-spacing:0}}
 .tabbar button{z-index:1;border-radius:26px}
 .tabbar button[aria-selected="true"]{background:transparent}
 
