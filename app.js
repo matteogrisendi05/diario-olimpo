@@ -296,7 +296,10 @@ function flushPending() { if (saveTimer) flushSave(); if (pendingText) pendingTe
 // {list: [{id, n, mode}], modes: {exerciseId: "reps" | "time"}}. Kept for good, so an extra exercise is
 // remembered for the next sessions. A set is {kg, reps} or, for timed exercises (plank…), {kg, sec}.
 const TIME_LO = 30, TIME_HI = 60;
-const exLib = () => { const l = state.profile.find(x => x.id === "exercises") || {}; return { list: l.list || [], modes: l.modes || {} }; };
+const exLib = () => { const l = state.profile.find(x => x.id === "exercises") || {}; return { list: l.list || [], modes: l.modes || {}, rests: l.rests || {} }; };
+// Rest time chosen by the user for an exercise (seconds), remembered for every session; otherwise the plan's.
+const restOf = ex => exLib().rests[ex.id] || ex.rest;
+let restEdit = null;   // exercise whose rest editor is open
 function saveLib(mutate) { const l = JSON.parse(JSON.stringify(exLib())); mutate(l); put("profile", "exercises", l); }
 const customDef = c => ({ id: c.id, n: c.n, s: 3, lo: 8, hi: 12, inc: 2.5, rest: c.mode === "time" ? 60 : 90, start: 0, custom: true, cue: "Esercizio aggiunto da te, fuori scheda." });
 const exDef = id => EX[id] || customDef(exLib().list.find(c => c.id === id) || { id, n: id });
@@ -391,7 +394,8 @@ function exCard(ex) {
   const rows = draft.sets[ex.id], t = isTime(ex.id), extra = (draft.extra || []).includes(ex.id);
   const done = rows.filter(x => x.done).length, sw = stopwatch && stopwatch.ex === ex.id;
   return `<article class="ex${done >= ex.s ? " complete" : ""}" id="ex-${ex.id}">
-    <div class="ex-top"><div><h3>${esc(ex.n)}${extra ? ' <span class="new">extra</span>' : ""}</h3><div class="target">${ex.s} × ${t ? `${TIME_LO}–${TIME_HI}″` : `${ex.lo}–${ex.hi}`} · recupero ${mmss(ex.rest)}</div></div><span class="cnt">${done}/${rows.length}</span></div>
+    <div class="ex-top"><div><h3>${esc(ex.n)}${extra ? ' <span class="new">extra</span>' : ""}</h3><div class="target">${ex.s} × ${t ? `${TIME_LO}–${TIME_HI}″` : `${ex.lo}–${ex.hi}`} · <button class="rest-btn" data-rest="${ex.id}" aria-expanded="${restEdit === ex.id}">⏱ recupero ${mmss(restOf(ex))}${exLib().rests[ex.id] ? " (tuo)" : ""}</button></div></div><span class="cnt">${done}/${rows.length}</span></div>
+    ${restEdit === ex.id ? `<div class="rest-edit"><button data-restd="${ex.id}" data-v="-15" aria-label="15 secondi in meno">− 15″</button><b>${mmss(restOf(ex))}</b><button data-restd="${ex.id}" data-v="15" aria-label="15 secondi in più">+ 15″</button>${exLib().rests[ex.id] ? `<button class="lnk" data-restd="${ex.id}" data-v="reset">Scheda: ${mmss(ex.rest)}</button>` : ""}</div>` : ""}
     <div class="chips" id="h-${ex.id}">${hintHtml(ex)}</div>
     ${ex.cue ? `<details class="how"><summary>Come si fa</summary><p>${esc(ex.cue)}${ex.alt ? "<br>" + esc(ex.alt) : ""}</p></details>` : ""}
     <div class="sets">
@@ -422,7 +426,7 @@ function stopStopwatch(save) {
   if (save && sec > 0 && i >= 0) {
     rows[i].sec = secStr(sec); rows[i].done = true;
     dirty = true; keepDraft(); scheduleSave();
-    startTimer(ex.rest, rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
+    startTimer(restOf(ex), rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
   }
   rerenderCard(s.ex);
 }
@@ -470,6 +474,14 @@ $("w-list").addEventListener("click", e => {
     swInt = setInterval(() => { const el = $("sw-t"); if (el && stopwatch) el.textContent = mmss(Math.floor((Date.now() - stopwatch.start) / 1000)); }, 250);
     return rerenderCard(b.dataset.sw);
   }
+  // Rest time: open/close the editor, then ±15″ (30″ to 6′), or back to the plan's value. Saved for every session.
+  if (b.dataset.rest) { restEdit = restEdit === b.dataset.rest ? null : b.dataset.rest; return rerenderCard(b.dataset.rest); }
+  if (b.dataset.restd) {
+    const id = b.dataset.restd, ex = curEx(id), v = b.dataset.v;
+    const next = v === "reset" ? null : Math.min(360, Math.max(30, restOf(ex) + +v));
+    saveLib(l => { if (next === null || next === ex.rest) delete l.rests[id]; else l.rests[id] = next; });
+    return rerenderCard(id);
+  }
   // Changing the measure or taking an exercise out would drop sets already ticked: ask first.
   const ticked = id => (draft.sets[id] || []).some(x => x.done);
   if (b.dataset.mode) {
@@ -506,7 +518,7 @@ $("w-list").addEventListener("click", e => {
     if (row.done && isTime(exId) && !(parseSec(row.sec) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.sec = secStr(prev ? prev.sec : TIME_LO); }
     else if (row.done && !isTime(exId) && !(num(row.reps) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.reps = String(prev ? prev.reps : ex.lo); }
     dirty = true; keepDraft(); rerenderCard(exId); scheduleSave();
-    if (row.done) startTimer(ex.rest, rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
+    if (row.done) startTimer(restOf(ex), rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
     return;
   }
   if (b.dataset.add) rows.push({ kg: rows.length ? rows[rows.length - 1].kg : fk(ex.start), reps: "", sec: "", done: false });
@@ -544,7 +556,7 @@ $("w-new-add").addEventListener("click", () => {
   $("w-new-n").value = "";
   addToSession(id);
 });
-function switchTo(date, plan) { if (stopwatch) stopStopwatch(false); if (saveTimer) flushSave(); draft = buildDraft(date, plan); dirty = false; keepDraft(); renderWork(); msg(state.sessions.some(s => s.id === date + "-" + plan) ? "Seduta già salvata: puoi correggerla." : "Tocca ✓ alla fine di ogni serie: salvo tutto da solo."); }
+function switchTo(date, plan) { restEdit = null; if (stopwatch) stopStopwatch(false); if (saveTimer) flushSave(); draft = buildDraft(date, plan); dirty = false; keepDraft(); renderWork(); msg(state.sessions.some(s => s.id === date + "-" + plan) ? "Seduta già salvata: puoi correggerla." : "Tocca ✓ alla fine di ogni serie: salvo tutto da solo."); }
 $("w-a").addEventListener("click", () => switchTo(draft.date, "A"));
 $("w-b").addEventListener("click", () => switchTo(draft.date, "B"));
 $("w-date").addEventListener("change", e => { if (e.target.value) switchTo(e.target.value, defaultPlan(e.target.value)); });
