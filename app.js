@@ -1,51 +1,63 @@
-const BLOCK1 = {
-  A: { name: "Forza", day: "Giovedì", dur: "≈ 60 min", note: "Parte alta pesante, gambe leggere: domani c'è la partita.", ex: [
-    { id: "panca", n: "Panca piana con bilanciere", s: 4, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 60, cue: "Scapole strette e basse, piedi a terra, bilanciere sul petto basso. Il tuo massimale è 80 kg: si parte da 60." },
-    { id: "trazioni", n: "Trazioni alla sbarra", s: 4, lo: 6, hi: 10, inc: 2.5, rest: 120, start: 0, bw: true, cue: "kg = zavorra: 0 a corpo libero. Quando fai 4×10, aggiungi 2,5 kg con la cintura o un manubrio tra i piedi." },
-    { id: "lento", n: "Lento avanti manubri seduto", s: 3, lo: 8, hi: 10, inc: 2, rest: 120, start: 14, cue: "kg di un manubrio. Addome contratto, non inarcare la schiena." },
-    { id: "rematore", n: "Rematore con manubrio", s: 3, lo: 8, hi: 12, inc: 2, rest: 90, start: 24, cue: "kg di un manubrio, serie per lato. Tira il gomito verso l'anca." },
-    { id: "bulgaro", n: "Split squat bulgaro", s: 2, lo: 8, hi: 10, inc: 2, rest: 90, start: 10, cue: "kg di un manubrio, serie per gamba. 3 ripetizioni in canna." },
-    { id: "rdl", n: "Stacco rumeno con manubri", s: 2, lo: 8, hi: 10, inc: 2, rest: 90, start: 18, cue: "kg di un manubrio. Schiena neutra, bacino indietro. 3 in canna." },
-    { id: "facepull", n: "Face pull al cavo", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 20, cue: "Corda alla fronte, gomiti alti: protegge le spalle.", alt: "Senza cavo: alzate posteriori a busto flesso, 6 kg." }
-  ]},
-  B: { name: "Estetica", day: "Sabato", dur: "≈ 55 min", note: "Solo parte alta, zero gambe: domani c'è il lungo. Recuperi brevi.", ex: [
-    { id: "inclinata", n: "Panca inclinata con manubri", s: 4, lo: 8, hi: 12, inc: 2, rest: 120, start: 20, cue: "Panca a 30°, kg di un manubrio. Il petto alto è quello che si vede in maglietta." },
-    { id: "lat", n: "Lat machine presa stretta", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 50, cue: "Petto verso la sbarra, risali lento. La V parte da qui." },
-    { id: "croci", n: "Croci ai cavi", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 10, cue: "kg per lato. Braccia appena piegate, stringi un secondo in chiusura.", alt: "Senza cavi: croci con manubri su panca piana, 10 kg." },
-    { id: "pulley", n: "Pulley basso", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 45, cue: "Busto fermo, tira verso l'ombelico, scapole indietro.", alt: "Senza pulley: rematore con bilanciere, 40 kg." },
-    { id: "alzate", n: "Alzate laterali con manubri", s: 4, lo: 12, hi: 20, inc: 1, rest: 60, start: 7, cue: "kg di un manubrio. Leggero e pulito: le spalle larghe fanno metà del fisico." },
-    { id: "curl", n: "Curl su panca inclinata", s: 3, lo: 10, hi: 12, inc: 1, rest: 60, start: 10, cue: "kg di un manubrio. Gomiti fermi dietro il busto." },
-    { id: "pushdown", n: "Pushdown alla corda", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 60, start: 20, cue: "Gomiti incollati ai fianchi, apri la corda in fondo.", alt: "Senza cavo: french press con manubrio, 12 kg." },
-    { id: "crunch", n: "Crunch al cavo in ginocchio", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 30, cue: "Arrotola la colonna, non tirare con le braccia.", alt: "Senza cavo: crunch inverso su panca, a corpo libero." }
-  ]}
+// Plans from 19/10/2026 (after the InBody of 19/10: legs are the least developed part, 104–105% vs arms ~120%).
+// Thursday A = legs first (the day before the game: legs always with 3 reps in reserve), Saturday B = upper body only
+// (Sunday is the long run). Exercise ids never change, so the history of each exercise is kept.
+const EXD = {
+  squat: { id: "squat", n: "Squat con bilanciere", s: 3, lo: 4, hi: 6, inc: 2.5, rest: 180, start: 50, cue: "Al rack, bilanciere sui trapezi, piedi larghezza spalle. Scendi finché le cosce sono parallele, schiena neutra, risali spingendo con tutto il piede. 3 ripetizioni in canna: domani c'è la partita. Le prime due sedute servono a trovare il carico giusto." },
+  rdl_bil: { id: "rdl_bil", n: "Stacco rumeno con bilanciere", s: 3, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 50, cue: "Ginocchia appena piegate, porta il bacino indietro e fai scendere il bilanciere vicino alle gambe fino a metà tibia. Schiena neutra, femorali in tensione. 3 in canna." },
+  bulgaro: { id: "bulgaro", n: "Split squat bulgaro", s: 2, lo: 8, hi: 10, inc: 2, rest: 90, start: 10, cue: "kg di un manubrio, serie per gamba. Piede dietro sulla panca, scendi dritto. Allena una gamba alla volta, come nella corsa. 3 ripetizioni in canna." },
+  leg_curl: { id: "leg_curl", n: "Leg curl", s: 2, lo: 10, hi: 12, inc: 2.5, rest: 75, start: 30, cue: "Femorali: proteggono le ginocchia nei cambi di direzione del basket e nella corsa. Sali in 1 secondo, scendi in 3." },
+  calf: { id: "calf", n: "Polpacci su step, una gamba", s: 3, lo: 10, hi: 15, inc: 2, rest: 60, start: 8, cue: "Avampiede sul bordo dello step, tieniti con una mano. Scendi lento (3 secondi) fino in fondo, sali in punta e tieni 1 secondo. kg = manubrio nell'altra mano, serie per gamba. Polpacci e tendine d'Achille forti reggono la maratona.", alt: "In alternativa: spinta di punta al leg press, gambe tese, 3×12–15." },
+  hip_thrust: { id: "hip_thrust", n: "Hip thrust con bilanciere", s: 3, lo: 8, hi: 10, inc: 2.5, rest: 120, start: 60, cue: "Schiena appoggiata alla panca, bilanciere sulle anche (con un cuscinetto). Spingi coi glutei fino ad avere busto e cosce in linea, tieni 1 secondo. Glutei forti = falcata e salto." },
+  panca: { id: "panca", n: "Panca piana con bilanciere", s: 3, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 60, cue: "Scapole strette e basse, piedi a terra, bilanciere sul petto basso. Il tuo massimale è 80 kg: si parte da 60." },
+  trazioni: { id: "trazioni", n: "Trazioni alla sbarra", s: 3, lo: 6, hi: 10, inc: 2.5, rest: 120, start: 0, bw: true, cue: "kg = zavorra: 0 a corpo libero. Quando fai 3×10, aggiungi 2,5 kg con la cintura o un manubrio tra i piedi." },
+  inclinata: { id: "inclinata", n: "Panca inclinata con manubri", s: 4, lo: 8, hi: 12, inc: 2, rest: 120, start: 20, cue: "Panca a 30°, kg di un manubrio. Il petto alto è quello che si vede in maglietta." },
+  lat: { id: "lat", n: "Lat machine presa stretta", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 50, cue: "Petto verso la sbarra, risali lento. La V parte da qui." },
+  lento: { id: "lento", n: "Lento avanti manubri seduto", s: 3, lo: 8, hi: 10, inc: 2, rest: 120, start: 14, cue: "kg di un manubrio. Addome contratto, non inarcare la schiena." },
+  pulley: { id: "pulley", n: "Pulley basso", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 45, cue: "Busto fermo, tira verso l'ombelico, scapole indietro.", alt: "Senza pulley: rematore con bilanciere, 40 kg." },
+  alzate: { id: "alzate", n: "Alzate laterali con manubri", s: 4, lo: 12, hi: 20, inc: 1, rest: 60, start: 7, cue: "kg di un manubrio. Leggero e pulito: le spalle larghe fanno metà del fisico." },
+  facepull: { id: "facepull", n: "Face pull al cavo", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 20, cue: "Corda alla fronte, gomiti alti: protegge le spalle.", alt: "Senza cavo: alzate posteriori a busto flesso, 6 kg." },
+  curl: { id: "curl", n: "Curl su panca inclinata", s: 3, lo: 10, hi: 12, inc: 1, rest: 60, start: 10, cue: "kg di un manubrio. Gomiti fermi dietro il busto." },
+  pushdown: { id: "pushdown", n: "Pushdown alla corda", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 60, start: 20, cue: "Gomiti incollati ai fianchi, apri la corda in fondo.", alt: "Senza cavo: french press con manubrio, 12 kg." },
+  crunch: { id: "crunch", n: "Crunch alla macchina", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 30, cue: "Schiena appoggiata, arrotola la colonna portando lo sterno verso il bacino. Spingi con gli addominali, non con le braccia; risali lento.", alt: "Macchina occupata: crunch al cavo in ginocchio, stesso carico di partenza." },
+  panca_incl_bil: { id: "panca_incl_bil", n: "Panca inclinata con bilanciere", s: 3, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 50, cue: "Panca a 30°, bilanciere sotto le clavicole. Parti dall'80% circa del carico di panca piana." },
+  trazioni_strette: { id: "trazioni_strette", n: "Trazioni presa neutra o supina", s: 3, lo: 6, hi: 10, inc: 2.5, rest: 120, start: 0, bw: true, cue: "Mani a larghezza spalle: più bicipite e dorsale bassa. kg = zavorra." },
+  panca_man: { id: "panca_man", n: "Panca piana con manubri", s: 4, lo: 8, hi: 12, inc: 2, rest: 120, start: 24, cue: "kg di un manubrio. Scendi finché i gomiti sono poco sotto la panca." },
+  lat_larga: { id: "lat_larga", n: "Lat machine presa larga", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 50, cue: "Mani oltre le spalle, tira verso il petto alto. Allarga la V." },
+  military: { id: "military", n: "Military press in piedi con bilanciere", s: 3, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 35, cue: "Glutei e addome stretti, il bilanciere sale passando vicino al viso. Niente slancio con le gambe." },
+  rematore_appoggio: { id: "rematore_appoggio", n: "Rematore manubri con petto in appoggio", s: 3, lo: 10, hi: 12, inc: 2, rest: 90, start: 16, cue: "Panca inclinata a 30°, petto appoggiato, kg di un manubrio. Stringi le scapole in alto." },
+  alzate_cavo: { id: "alzate_cavo", n: "Alzate laterali al cavo", s: 4, lo: 12, hi: 15, inc: 1.25, rest: 60, start: 5, cue: "Un braccio alla volta, cavo dietro la schiena: tensione costante.", alt: "Senza cavo: alzate laterali con manubri." },
+  curl_bil: { id: "curl_bil", n: "Curl con bilanciere", s: 3, lo: 8, hi: 12, inc: 2.5, rest: 60, start: 25, cue: "Gomiti fermi ai fianchi, niente slancio con la schiena." },
+  french: { id: "french", n: "French press con bilanciere EZ", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 60, start: 20, cue: "Sdraiato, bilanciere verso la fronte, gomiti fermi." },
+  leg_raise: { id: "leg_raise", n: "Leg raise alla sbarra", s: 3, lo: 10, hi: 15, inc: 2.5, rest: 60, start: 0, cue: "Appeso, gambe su fino a 90° senza dondolare. Troppo facile? Gambe tese più in alto." }
 };
-const keep = id => BLOCK1.A.ex.find(e => e.id === id);
-const B2A = { name: "Forza", day: "Giovedì", dur: "≈ 60 min", note: "Esercizi nuovi per gli stessi muscoli: le prime due sedute prendi le misure ai carichi. Domani c'è la partita, gambe leggere.", ex: [
-  { id: "panca_incl_bil", n: "Panca inclinata con bilanciere", s: 4, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 50, cue: "Panca a 30°, bilanciere sotto le clavicole. Parti dall'80% circa del carico di panca piana." },
-  { id: "trazioni_strette", n: "Trazioni presa neutra o supina", s: 4, lo: 6, hi: 10, inc: 2.5, rest: 120, start: 0, bw: true, cue: "Mani a larghezza spalle: più bicipite e dorsale bassa. kg = zavorra." },
-  { id: "military", n: "Military press in piedi con bilanciere", s: 3, lo: 6, hi: 8, inc: 2.5, rest: 150, start: 35, cue: "Glutei e addome stretti, il bilanciere sale passando vicino al viso. Niente slancio con le gambe." },
-  { id: "rematore_bil", n: "Rematore con bilanciere", s: 3, lo: 8, hi: 10, inc: 2.5, rest: 120, start: 45, cue: "Busto a 45°, schiena neutra, bilanciere verso l'ombelico." },
-  keep("bulgaro"), keep("rdl"), keep("facepull")
-]};
-const B2B = { name: "Estetica", day: "Sabato", dur: "≈ 55 min", note: "Solo parte alta, zero gambe: domani c'è il lungo. Più lavoro su spalle e braccia.", ex: [
-  { id: "panca_man", n: "Panca piana con manubri", s: 4, lo: 8, hi: 12, inc: 2, rest: 120, start: 24, cue: "kg di un manubrio. Scendi finché i gomiti sono poco sotto la panca." },
-  { id: "lat_larga", n: "Lat machine presa larga", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 90, start: 50, cue: "Mani oltre le spalle, tira verso il petto alto. Allarga la V." },
-  { id: "dip", n: "Dip alle parallele", s: 3, lo: 8, hi: 12, inc: 2.5, rest: 90, start: 0, bw: true, cue: "Busto un po' in avanti per lavorare il petto. kg = zavorra; se non arrivi a 8, macchina assistita (kg negativi)." },
-  { id: "rematore_appoggio", n: "Rematore manubri con petto in appoggio", s: 3, lo: 10, hi: 12, inc: 2, rest: 90, start: 16, cue: "Panca inclinata a 30°, petto appoggiato, kg di un manubrio. Stringi le scapole in alto." },
-  { id: "alzate_cavo", n: "Alzate laterali al cavo", s: 4, lo: 12, hi: 15, inc: 1.25, rest: 60, start: 5, cue: "Un braccio alla volta, cavo dietro la schiena: tensione costante.", alt: "Senza cavo: alzate laterali con manubri." },
-  { id: "curl_bil", n: "Curl con bilanciere", s: 3, lo: 8, hi: 12, inc: 2.5, rest: 60, start: 25, cue: "Gomiti fermi ai fianchi, niente slancio con la schiena." },
-  { id: "french", n: "French press con bilanciere EZ", s: 3, lo: 10, hi: 12, inc: 2.5, rest: 60, start: 20, cue: "Sdraiato, bilanciere verso la fronte, gomiti fermi." },
-  { id: "leg_raise", n: "Leg raise alla sbarra", s: 3, lo: 10, hi: 15, inc: 2.5, rest: 60, start: 0, cue: "Appeso, gambe su fino a 90° senza dondolare. Troppo facile? Gambe tese più in alto." }
-]};
+// Exercises of the first version of the plans (until 18/10): not in the plans any more, kept so their history still shows.
+const LEGACY = [
+  { id: "rematore", n: "Rematore con manubrio", s: 3, lo: 8, hi: 12, inc: 2, rest: 90, start: 24, cue: "" },
+  { id: "rdl", n: "Stacco rumeno con manubri", s: 2, lo: 8, hi: 10, inc: 2, rest: 90, start: 18, cue: "" },
+  { id: "croci", n: "Croci ai cavi", s: 3, lo: 12, hi: 15, inc: 2.5, rest: 60, start: 10, cue: "" },
+  { id: "rematore_bil", n: "Rematore con bilanciere", s: 3, lo: 8, hi: 10, inc: 2.5, rest: 120, start: 45, cue: "" },
+  { id: "dip", n: "Dip alle parallele", s: 3, lo: 8, hi: 12, inc: 2.5, rest: 90, start: 0, bw: true, cue: "" }
+];
+const pick = (...ids) => ids.map(id => EXD[id]);
+const BLOCK1 = {
+  A: { name: "Gambe e forza", day: "Giovedì", dur: "≈ 70 min", note: "Prima le gambe, quando sei fresco: forza per la maratona, il basket e il calcetto. Sempre 3 ripetizioni in canna: domani c'è la partita.",
+    ex: pick("squat", "rdl_bil", "bulgaro", "leg_curl", "calf", "panca", "trazioni") },
+  B: { name: "Estetica", day: "Sabato", dur: "≈ 60 min", note: "Solo parte alta, zero gambe: domani c'è il lungo. Recuperi brevi.",
+    ex: pick("inclinata", "lat", "lento", "pulley", "alzate", "facepull", "curl", "pushdown", "crunch") }
+};
+const B2A = { name: "Gambe e forza", day: "Giovedì", dur: "≈ 70 min", note: "Nuovo stimolo per le gambe: entra l'hip thrust. Le prime due sedute prendi le misure ai carichi nuovi. Domani c'è la partita: 3 in canna.",
+  ex: pick("squat", "hip_thrust", "bulgaro", "leg_curl", "calf", "panca_incl_bil", "trazioni_strette") };
+const B2B = { name: "Estetica", day: "Sabato", dur: "≈ 60 min", note: "Solo parte alta, zero gambe: domani c'è il lungo. Più lavoro su spalle e braccia.",
+  ex: pick("panca_man", "lat_larga", "military", "rematore_appoggio", "alzate_cavo", "facepull", "curl_bil", "french", "leg_raise") };
 const maint = p => ({ ...p, note: "Mantenimento: arrivano i lunghi da 26–32 km. Una serie in meno, tieni i carichi del blocco 2 senza per forza salire.", ex: p.ex.filter(e => e.id !== "bulgaro").map(e => ({ ...e, s: Math.max(2, e.s - 1) })) });
 const BLOCKS = [
-  { n: 1, name: "Base", from: "2026-10-17", to: "2026-11-30", end: "2026-11-28", A: BLOCK1.A, B: BLOCK1.B, desc: "Impari la tecnica e sali di carico ogni settimana. È il blocco in cui cresci più in fretta." },
-  { n: 2, name: "Variazione", from: "2026-12-01", to: "2027-01-17", end: "2027-01-16", A: B2A, B: B2B, desc: "Stessi muscoli, esercizi nuovi: stimolo diverso e più volume su spalle e braccia." },
+  { n: 1, name: "Base", from: "2026-10-17", to: "2026-11-30", end: "2026-11-28", A: BLOCK1.A, B: BLOCK1.B, desc: "Il giovedì costruisci le gambe (squat, stacco rumeno, polpacci), il sabato la parte alta. Sali di carico ogni settimana." },
+  { n: 2, name: "Variazione", from: "2026-12-01", to: "2027-01-17", end: "2027-01-16", A: B2A, B: B2B, desc: "Stessi muscoli, esercizi nuovi: hip thrust per le gambe, più volume su spalle e braccia." },
   { n: 3, name: "Mantenimento", from: "2027-01-18", to: "2027-03-14", end: "2027-03-06", A: maint(B2A), B: maint(B2B), desc: "La maratona ha la priorità. Una serie in meno e niente bulgaro: l'obiettivo è non perdere niente." }
 ];
 const blockOf = date => BLOCKS.find(b => date >= b.from && date <= b.to) || (date < BLOCKS[0].from ? BLOCKS[0] : BLOCKS[2]);
 const planOf = (code, date) => blockOf(date)[code];
-const EX = Object.fromEntries(BLOCKS.flatMap(b => [...b.A.ex, ...b.B.ex]).reverse().map(e => [e.id, e]));
+const EX = Object.fromEntries([...LEGACY, ...BLOCKS.flatMap(b => [...b.A.ex, ...b.B.ex]).reverse()].map(e => [e.id, e]));
 const curPlan = () => planOf(draft.plan, draft.date);
 const curEx = id => sessionEx().find(e => e.id === id) || exDef(id);
 const HEIGHT = 188;
@@ -736,19 +748,32 @@ $("g-hist").addEventListener("click", e => {
 // Official U.S. Navy / DoD circumference equation for men (Hodgdon & Beckett 1984, Naval Health Research Center
 // report 84-11), in the inch form used by the military regulations: cm are converted to inches.
 const navy = x => x.waist && x.neck && x.waist > x.neck ? r1(86.010 * Math.log10((x.waist - x.neck) / 2.54) - 70.041 * Math.log10(HEIGHT / 2.54) + 36.76) : null;
+// Body fat: the bioimpedance (InBody) value when there is one, otherwise the Navy tape formula.
+const bfOf = x => x.bia && x.bia.pbf ? x.bia.pbf : navy(x);
+const BIA_F = { pbf: "b-pbf", smm: "b-smm", leg_l: "b-legl", leg_r: "b-legr", arm_l: "b-arml", arm_r: "b-armr", trunk: "b-trunk", visceral: "b-visc" };
+function renderBia(asc) {
+  const list = asc.filter(x => x.bia), last = list[list.length - 1], first = list[0];
+  $("b-bia").hidden = !last; if (!last) return;
+  const b = last.bia, f = first.bia, legs = (b.leg_l || 0) + (b.leg_r || 0), arms = (b.arm_l || 0) + (b.arm_r || 0);
+  const row = (l, k, u) => b[k] == null ? "" : `<div class="li"><div class="t"><b>${l}</b><span>${first !== last && f[k] != null ? `${b[k] - f[k] > 0 ? "+" : ""}${fk(r1(b[k] - f[k]))} ${u} dal ${ddmm(first.date)}` : `misura del ${ddmm(last.date)}`}</span></div><b>${fk(b[k])} ${u}</b></div>`;
+  $("b-bia").innerHTML = `<h3>Bioimpedenza · ${longDate(last.date)}</h3>
+    <div class="small muted">Le gambe sono la parte da far crescere (al 19/10: 104–105% del riferimento InBody, contro il 120% delle braccia). Obiettivo: che i kg delle gambe salgano da una bioimpedenza all'altra${legs ? `; oggi ${fk(r1(legs / 2))} kg in media per gamba` : ""}.</div>
+    <div class="list">${row("Grasso corporeo", "pbf", "%")}${row("Muscolo scheletrico", "smm", "kg")}${row("Gamba sinistra", "leg_l", "kg")}${row("Gamba destra", "leg_r", "kg")}${row("Braccio sinistro", "arm_l", "kg")}${row("Braccio destro", "arm_r", "kg")}${row("Tronco", "trunk", "kg")}${row("Grasso viscerale", "visceral", "")}</div>`;
+}
 function renderBody() {
   const asc = [...state.body].sort((a, b) => a.date < b.date ? -1 : 1);
   const w = asc.filter(x => x.weight), v = asc.filter(x => x.waist);
   const lw = w[w.length - 1], fw = w[0], lv = v[v.length - 1], fv = v[0];
   const delta = (a, b, u) => ((a - b) > 0 ? "+" : "") + fk(r1(a - b)) + " " + u + " dall'inizio";
-  const bfList = asc.filter(x => navy(x) !== null);
-  const lb = bfList[bfList.length - 1], fb = bfList[0];
-  const fat = lb && lw ? r1(lw.weight * navy(lb) / 100) : null;
+  const bfList = asc.filter(x => bfOf(x) !== null);
+  const lb = bfList[bfList.length - 1];
+  const fat = lb && lw ? r1(lw.weight * bfOf(lb) / 100) : null;
   $("b-tiles").innerHTML = [
     ["Peso", lw ? fk(lw.weight) : "—", lw && fw && lw !== fw ? delta(lw.weight, fw.weight, "kg") : "kg"],
     ["Vita", lv ? fk(lv.waist) : "—", lv && fv && lv !== fv ? delta(lv.waist, fv.waist, "cm") : "cm"],
-    ["Grasso", lb ? fk(navy(lb)) + "%" : "—", lb ? (lb !== fb ? delta(navy(lb), navy(fb), "%") : (fat ? fk(fat) + " kg di grasso" : "")) : "serve il collo"]
+    ["Grasso", lb ? fk(bfOf(lb)) + "%" : "—", lb ? `${lb.bia && lb.bia.pbf ? "InBody" : "metro"}${fat ? " · " + fk(fat) + " kg" : ""}` : "serve il collo"]
   ].map(([k, val, d]) => `<div class="tile"><div class="k">${k}</div><div class="v">${val}</div><div class="d">${d}</div></div>`).join("");
+  renderBia(asc);
   const ad = asc.filter(x => x.shoulders && x.waist);
   chart($("b-chart-ad"), ad.map(x => ({ d: x.date, x: ts(x.date), y: Math.round(x.shoulders / x.waist * 100) / 100, tip: `spalle ${fk(x.shoulders)} · vita ${fk(x.waist)}` })),
     { unit: "", fmt: n => n.toFixed(2).replace(".", ","), label: "Rapporto spalle/vita", ref: { y: 1.62, label: "sezione aurea 1,62" }, empty: "Misura le spalle (insieme alla vita) e qui vedi quanto ti avvicini alla proporzione delle statue." });
@@ -758,11 +783,11 @@ function renderBody() {
     const a = xs[0][k], b = xs[xs.length - 1][k], d = r1(b - a);
     return `<div class="li"><div class="t"><b>${l}</b><span>${xs.length > 1 ? (d > 0 ? "+" : "") + fk(d) + " cm dall'inizio" : "prima misura " + ddmm(xs[0].date)}</span></div><b>${fk(b)} cm</b></div>`;
   }).join("");
-  chart($("b-chart-bf"), bfList.map(x => ({ d: x.date, x: ts(x.date), y: navy(x), tip: x.weight ? fk(r1(x.weight * navy(x) / 100)) + " kg di grasso" : "" })),
-    { unit: "%", fmt: n => fk(r1(n)), label: "Massa grassa", ref: { y: 12.5, label: "obiettivo 12,5%" }, empty: "Aggiungi il giro collo alla prossima misurazione e qui compare la tua massa grassa." });
+  chart($("b-chart-bf"), bfList.map(x => ({ d: x.date, x: ts(x.date), y: bfOf(x), tip: `${x.bia && x.bia.pbf ? "InBody" : "metro"}${x.weight ? " · " + fk(r1(x.weight * bfOf(x) / 100)) + " kg di grasso" : ""}` })),
+    { unit: "%", fmt: n => fk(r1(n)), label: "Massa grassa", ref: { y: 13, label: "tetto 13%" }, empty: "Aggiungi il giro collo o una bioimpedenza e qui compare la tua massa grassa." });
   chart($("b-chart-w"), w.map(x => ({ d: x.date, x: ts(x.date), y: x.weight })), { unit: "kg", fmt: n => fk(r1(n)), label: "Peso corporeo", empty: "Pesati 2–3 volte a settimana: la tendenza conta più del singolo giorno." });
   chart($("b-chart-v"), v.map(x => ({ d: x.date, x: ts(x.date), y: x.waist })), { unit: "cm", fmt: n => fk(r1(n)), label: "Giro vita", empty: "Misura il giro vita all'ombelico e segnalo qui sopra." });
-  $("b-table").innerHTML = asc.length ? [...asc].reverse().map(x => `<div class="li"><div class="t"><b>${longDate(x.date)}</b><span>${x.weight ? fk(x.weight) + " kg" : "—"} · ${x.waist ? "vita " + fk(x.waist) : "vita —"}${x.neck ? " · collo " + fk(x.neck) : ""}${navy(x) !== null ? " · " + fk(navy(x)) + "% grasso" : ""}${x.shoulders ? " · spalle " + fk(x.shoulders) : ""}</span></div><div class="acts"><button class="lnk" data-bedit="${x.id}">Modifica</button><button class="lnk danger" data-bdel="${x.id}">Elimina</button></div></div>`).join("") : `<p class="empty">Nessuna misurazione ancora.</p>`;
+  $("b-table").innerHTML = asc.length ? [...asc].reverse().map(x => `<div class="li"><div class="t"><b>${longDate(x.date)}</b><span>${x.weight ? fk(x.weight) + " kg" : "—"} · ${x.waist ? "vita " + fk(x.waist) : "vita —"}${x.neck ? " · collo " + fk(x.neck) : ""}${bfOf(x) !== null ? " · " + fk(bfOf(x)) + "% grasso" + (x.bia && x.bia.pbf ? " (InBody)" : "") : ""}${x.shoulders ? " · spalle " + fk(x.shoulders) : ""}</span></div><div class="acts"><button class="lnk" data-bedit="${x.id}">Modifica</button><button class="lnk danger" data-bdel="${x.id}">Elimina</button></div></div>`).join("") : `<p class="empty">Nessuna misurazione ancora.</p>`;
 }
 $("b-date").value = today();
 const BODY_F = { weight: "b-w", waist: "b-waist", neck: "b-neck", shoulders: "b-sh", chestc: "b-chestc", arm: "b-arm", thighc: "b-thighc", calf: "b-calf" };
@@ -770,19 +795,24 @@ let bodyEditId = null;   // measurement being edited: its fields are replaced ex
 $("b-save").addEventListener("click", async () => {
   const date = $("b-date").value || today(), m = $("b-msg"), F = BODY_F;
   const val = {}; for (const k in F) val[k] = num($(F[k]).value);
-  if (!Object.keys(F).some(k => isFinite(val[k]))) { m.textContent = "Scrivi almeno una misura."; m.className = "savemsg err"; return; }
+  const bia = {}; for (const k in BIA_F) { const n = num($(BIA_F[k]).value); if (isFinite(n)) bia[k] = n; }
+  if (!Object.keys(F).some(k => isFinite(val[k])) && !Object.keys(bia).length) { m.textContent = "Scrivi almeno una misura."; m.className = "savemsg err"; return; }
+  if (bia.pbf != null && (bia.pbf < 3 || bia.pbf > 50)) { m.textContent = "La percentuale di grasso sembra strana: controlla il referto."; m.className = "savemsg err"; return; }
   if (isFinite(val.waist) && (val.waist < 50 || val.waist > 160)) { m.textContent = "Il giro vita sembra strano: controlla i centimetri."; m.className = "savemsg err"; return; }
   if (isFinite(val.neck) && (val.neck < 25 || val.neck > 60)) { m.textContent = "Il giro collo sembra strano: controlla i centimetri."; m.className = "savemsg err"; return; }
   // New measurement: adds to what was already saved that day. Edit: what you see is what is saved.
   const prev = bodyEditId ? {} : state.body.find(x => x.id === date) || {};
   const doc = { date };
   for (const k in F) doc[k] = isFinite(val[k]) ? val[k] : (prev[k] ?? null);
+  const allBia = { ...(prev.bia || {}), ...bia };
+  if (Object.keys(allBia).length) doc.bia = allBia;
   try {
     const moved = bodyEditId && bodyEditId !== date ? bodyEditId : null;
     await put("body", date, doc);
     if (moved) await del("body", moved);
     m.textContent = bodyEditId ? "Misurazione aggiornata." : "Misurazione salvata."; m.className = "savemsg ok";
     for (const k in F) $(F[k]).value = "";
+    for (const k in BIA_F) $(BIA_F[k]).value = "";
     bodyEditId = null;
   } catch (e) { m.textContent = "Non sono riuscito a salvare. Riprova tra poco."; m.className = "savemsg err"; }
 });
@@ -791,6 +821,8 @@ function editBody(id) {
   bodyEditId = x.id;
   $("b-date").value = x.date;
   for (const k in BODY_F) $(BODY_F[k]).value = x[k] != null ? fk(x[k]) : "";
+  for (const k in BIA_F) $(BIA_F[k]).value = x.bia && x.bia[k] != null ? fk(x.bia[k]) : "";
+  if (x.bia) $("b-bia-form").open = true;
   if (["shoulders", "chestc", "arm", "thighc", "calf"].some(k => x[k] != null)) $("b-sh").closest("details").open = true;
   $("b-msg").textContent = `Stai modificando la misurazione di ${longDate(x.date)}: cambia i numeri e tocca Salva.`; $("b-msg").className = "savemsg";
   $("b-save").closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1430,8 +1462,9 @@ function renderCoach() {
     out.push(`<div class="card"><h3>Corsa · km a settimana</h3>${p ? `<div class="small muted">Facili e lunghi, ultimi 14 giorni: ${esc(p.ritmo)}/km${p.fc_media ? ` a ${p.fc_media} bpm` : ""}${q ? ` · 14 giorni prima: ${esc(q.ritmo)}/km${q.fc_media ? ` a ${q.fc_media} bpm` : ""}` : ""}</div>` : ""}<div class="chart" id="c-km"></div></div>`);
   }
   const bk = Object.keys(BODY_L).filter(k => body[k]);
-  if (bk.length || body.spalle_su_vita) out.push(`<div class="card"><h3>Corpo</h3><div class="list">${bk.map(k => { const b = body[k], d = r1(b.ora - b.prima);
+  if (bk.length || body.spalle_su_vita || body.bia) out.push(`<div class="card"><h3>Corpo</h3><div class="list">${bk.map(k => { const b = body[k], d = r1(b.ora - b.prima);
       return `<div class="li"><div class="t"><b>${BODY_L[k][0]}</b><span>${b.dal && b.dal !== b.al ? `dal ${ddmm(b.dal)} al ${ddmm(b.al)}` : b.al ? `misura del ${ddmm(b.al)}` : ""}</span></div><b>${fk(b.ora)} ${BODY_L[k][1]}${b.dal !== b.al && d ? ` <span class="small muted">(${d > 0 ? "+" : ""}${fk(d)})</span>` : ""}</b></div>`; }).join("")}
+    ${obj(body.bia).gamba_media_kg ? `<div class="li"><div class="t"><b>Gamba (InBody, massa magra)</b><span>${body.bia.dal !== body.bia.al ? `dal ${ddmm(body.bia.dal)} al ${ddmm(body.bia.al)}` : `misura del ${ddmm(body.bia.al)}`} · braccio ${fk(body.bia.braccio_medio_kg || 0)} kg</span></div><b>${fk(body.bia.gamba_media_kg.ora)} kg</b></div>` : ""}
     ${body.spalle_su_vita ? `<div class="li"><div class="t"><b>Spalle ÷ vita</b><span>obiettivo ${fk(body.spalle_su_vita.obiettivo)}</span></div><b>${fk(body.spalle_su_vita.ora)}</b></div>` : ""}</div></div>`);
   if (arr(r.prossimi_7).length) out.push(`<div class="card"><h3>Prossimi 7 giorni</h3><div class="list">${arr(r.prossimi_7).map(d => `<div class="li"><div class="t"><b>${d.date === today() ? "Oggi" : longDate(d.date)}</b><span>${esc(arr(d.eventi).join(" · ") || "—")}</span></div><span class="lvl ${esc(d.livello || "")}">${esc(LVL[d.livello] || d.livello || "")}</span></div>`).join("")}</div></div>`);
   if (r.motivazione) out.push(`<div class="card prose"><h3>Il punto dell'allenatore</h3><p>${esc(r.motivazione)}</p></div>`);
@@ -1463,7 +1496,7 @@ function showTab(t) {
   if (t === "run") renderRun();
   // An edit left half-way (run or measurement) is cancelled when leaving its section, so it can't overwrite another one later.
   if (t !== "run" && runEditId) { resetRunForm(); $("r-msg").textContent = "Modifica annullata."; $("r-msg").className = "savemsg"; }
-  if (t !== "body" && bodyEditId) { bodyEditId = null; for (const k in BODY_F) $(BODY_F[k]).value = ""; $("b-date").value = today(); $("b-msg").textContent = ""; }
+  if (t !== "body" && bodyEditId) { bodyEditId = null; for (const k in BODY_F) $(BODY_F[k]).value = ""; for (const k in BIA_F) $(BIA_F[k]).value = ""; $("b-date").value = today(); $("b-msg").textContent = ""; }
   if (t === "arch") { archDays = 30; renderArch(); }
   if (t === "coach") { coachDate = today(); renderCoach(); }
   window.scrollTo(0, 0);

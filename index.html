@@ -34,7 +34,7 @@
     <button class="card linkcard" id="w-today"><span><span class="eyebrow">Oggi</span><b id="w-today-t"></b><span class="small muted" id="w-today-s"></span></span><span aria-hidden="true">›</span></button>
     <div class="today">
       <div class="seg" role="group" aria-label="Scheda">
-        <button id="w-a" data-plan="A" aria-pressed="true">A · Forza</button>
+        <button id="w-a" data-plan="A" aria-pressed="true">A · Gambe</button>
         <button id="w-b" data-plan="B" aria-pressed="false">B · Estetica</button>
       </div>
       <div class="trow">
@@ -117,10 +117,24 @@
         </div>
         <p>Al mattino, prima di allenarti: dopo la palestra il muscolo è gonfio e la misura non vale. Metro aderente ma senza stringere.<br><b>Spalle</b>: in piedi, braccia lungo i fianchi, metro orizzontale nel punto più largo delle spalle, a fine espirazione. Fattela prendere da qualcuno.<br><b>Petto</b>: sotto le ascelle, sopra i capezzoli, a fine espirazione.<br><b>Braccio</b>: destro, bicipite contratto, nel punto più grosso.<br><b>Coscia</b>: destra, in piedi con il peso su tutte e due le gambe, appena sotto il gluteo.<br><b>Polpaccio</b>: destro, in piedi, nel punto più grosso.<br>Se coscia e polpaccio calano mentre la vita resta uguale, la corsa ti sta mangiando muscolo: mangia di più.</p>
       </details>
+      <details class="how" id="b-bia-form"><summary>Bioimpedenza (InBody) · dal referto</summary>
+        <div class="fields" style="margin-top:10px;grid-template-columns:repeat(2,minmax(0,1fr))">
+          <label class="fld">Grasso corporeo %<input id="b-pbf" inputmode="decimal" placeholder="11,8"></label>
+          <label class="fld">Muscolo scheletrico kg<input id="b-smm" inputmode="decimal" placeholder="40,1"></label>
+          <label class="fld">Gamba sinistra kg<input id="b-legl" inputmode="decimal" placeholder="11,29"></label>
+          <label class="fld">Gamba destra kg<input id="b-legr" inputmode="decimal" placeholder="11,12"></label>
+          <label class="fld">Braccio sinistro kg<input id="b-arml" inputmode="decimal" placeholder="4,21"></label>
+          <label class="fld">Braccio destro kg<input id="b-armr" inputmode="decimal" placeholder="4,30"></label>
+          <label class="fld">Tronco kg<input id="b-trunk" inputmode="decimal" placeholder="32,0"></label>
+          <label class="fld">Grasso viscerale<input id="b-visc" inputmode="decimal" placeholder="3"></label>
+        </div>
+        <p>Dal referto: "Analisi massa magra segmentale" per gambe, braccia e tronco (i kg, non le percentuali). Fallo sempre alla stessa ora e nelle stesse condizioni (idratazione, niente allenamento prima): così i confronti valgono.</p>
+      </details>
       <button class="btn" id="b-save">Salva misurazione</button>
       <div class="savemsg" id="b-msg">Una volta a settimana, al mattino a digiuno. Vita all'ombelico a pancia rilassata. Collo appena sotto il pomo d'Adamo.</div>
     </div>
-    <div class="card"><h3>Massa grassa</h3><p class="bfhow">Formula ufficiale della Marina USA (Hodgdon e Beckett, Naval Health Research Center, 1984), usata da tutte le forze armate americane dal 2002: altezza, vita all'ombelico e collo sotto il pomo d'Adamo. Rispetto alla DEXA sbaglia in media di circa ±3 punti, quindi conta che il numero scenda, non il valore esatto. L'obiettivo 12–13% per l'addome visibile è un obiettivo estetico, non una soglia ufficiale.</p><div class="chart" id="b-chart-bf"></div></div>
+    <div class="card" id="b-bia" hidden></div>
+    <div class="card"><h3>Massa grassa</h3><p class="bfhow">Quando c'è, vale la bioimpedenza (InBody); altrimenti la formula ufficiale della Marina USA (Hodgdon e Beckett, Naval Health Research Center, 1984) con altezza, vita all'ombelico e collo. I due metodi danno numeri diversi (il 16–19/10: 17,1% col metro, 11,8% con l'InBody): confronta sempre lo stesso metodo con sé stesso. Obiettivo: restare tra 11 e 13% mentre metti muscolo alle gambe.</p><div class="chart" id="b-chart-bf"></div></div>
     <div class="card"><h3>Proporzioni da statua</h3><p class="bfhow">Spalle ÷ vita. Le statue greche stanno intorno a 1,62, la sezione aurea. Il rapporto sale se allarghi le spalle o stringi la vita: è il numero che misura il tuo obiettivo. Nell'ideale classico anche braccio, collo e polpaccio misurano uguale.</p><div class="chart" id="b-chart-ad"></div><div class="list" id="b-meas"></div></div>
     <div class="card"><h3>Peso corporeo</h3><div class="chart" id="b-chart-w"></div></div>
     <div class="card"><h3>Giro vita</h3><div class="small muted">È il numero che conta: se scende mentre la forza sale, stai perdendo grasso e mettendo muscolo.</div><div class="chart" id="b-chart-v"></div></div>
