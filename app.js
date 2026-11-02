@@ -53,7 +53,7 @@ const maint = p => ({ ...p, note: "Mantenimento: arrivano i lunghi da 26–32 km
 const BLOCKS = [
   { n: 1, name: "Base", from: "2026-10-17", to: "2026-11-30", end: "2026-11-28", A: BLOCK1.A, B: BLOCK1.B, desc: "Il giovedì costruisci le gambe (squat, stacco rumeno, polpacci), il sabato la parte alta. Sali di carico ogni settimana." },
   { n: 2, name: "Variazione", from: "2026-12-01", to: "2027-01-17", end: "2027-01-16", A: B2A, B: B2B, desc: "Stessi muscoli, esercizi nuovi: hip thrust per le gambe, più volume su spalle e braccia." },
-  { n: 3, name: "Mantenimento", from: "2027-01-18", to: "2027-03-14", end: "2027-03-06", A: maint(B2A), B: maint(B2B), desc: "La maratona ha la priorità. Una serie in meno e niente bulgaro: l'obiettivo è non perdere niente." }
+  { n: 3, name: "Mantenimento", from: "2027-01-18", to: "2027-04-04", end: "2027-03-27", A: maint(B2A), B: maint(B2B), desc: "La maratona ha la priorità. Una serie in meno e niente bulgaro: l'obiettivo è non perdere niente." }
 ];
 const blockOf = date => BLOCKS.find(b => date >= b.from && date <= b.to) || (date < BLOCKS[0].from ? BLOCKS[0] : BLOCKS[2]);
 const planOf = (code, date) => blockOf(date)[code];
@@ -63,7 +63,7 @@ const curEx = id => sessionEx().find(e => e.id === id) || exDef(id);
 const HEIGHT = 188;
 const BENCH_1RM = 80;
 
-const state = { sessions: [], body: [], profile: [], nutrition: [], intake: [], runs: [], photo: [], coach: [] };
+const state = { sessions: [], body: [], profile: [], nutrition: [], intake: [], runs: [], photo: [], coach: [], runcoach: [] };
 let draft = null, dirty = false, saveTimer = null;
 
 const $ = id => document.getElementById(id);
@@ -194,13 +194,14 @@ async function fetchAll(make) {
   }
 }
 // Daily plans and coach reports are big: only the last 60 days are downloaded, older ones stay as saved on the phone.
-const RECENT = ["nutrition", "coach"], recentFrom = () => shiftDate(today(), -60);
+const RECENT = ["nutrition", "coach", "runcoach"], recentFrom = () => shiftDate(today(), -60);
 let lastPull = 0;
 async function pull() {
   if (!sb || !uid || !navigator.onLine) return;
   const from = recentFrom();
-  // Photo images are not downloaded back: the phone already has its thumbnails.
-  const { data, error } = await fetchAll(() => sb.from("docs").select("coll,id,data").neq("coll", "photo").or(`coll.not.in.(${RECENT.join(",")}),id.gte.${from}`).order("coll").order("id"));
+  // Photo images are not downloaded back: the phone already has its thumbnails. The copies of the run images
+  // for the running coach ("runimg") stay on the server.
+  const { data, error } = await fetchAll(() => sb.from("docs").select("coll,id,data").not("coll", "in", "(photo,runimg)").or(`coll.not.in.(${RECENT.join(",")}),id.gte.${from}`).order("coll").order("id"));
   const ph = await fetchAll(() => sb.from("docs").select("coll,id,date:data->>date,time:data->>time,note:data->>note,status:data->>status,text_only:data->text_only,meal:data->>meal,meal_i:data->meal_i,items:data->items,kcal:data->kcal,protein:data->protein,carbs:data->carbs,fat:data->fat,ai_note:data->>ai_note").eq("coll", "photo").order("coll").order("id"));
   if (error) { console.warn("pull", error); return; }
   lastPull = Date.now();
@@ -648,8 +649,8 @@ function chart(el, pts, opt) {
   svg.addEventListener("pointerleave", () => { tip.hidden = true; gd.setAttribute("visibility", "hidden"); });
 }
 
-/* ---------- calendar of gym days (Thu = A, Sat = B, 17 Oct – 6 Mar, no gym on the 17 Dec match) ---------- */
-const isGymDay = d => { const wd = new Date(d + "T12:00:00").getDay(); return (wd === 4 || wd === 6) && d >= "2026-10-17" && d <= "2027-03-06" && d !== "2026-12-17"; };
+/* ---------- calendar of gym days (Thu = A, Sat = B, 17 Oct – 27 Mar, no gym on the 17 Dec match) ---------- */
+const isGymDay = d => { const wd = new Date(d + "T12:00:00").getDay(); return (wd === 4 || wd === 6) && d >= "2026-10-17" && d <= "2027-03-27" && d !== "2026-12-17"; };
 function gymDaysBetween(from, to) { let n = 0; for (let d = from; d <= to; d = shiftDate(d, 1)) if (isGymDay(d)) n++; return n; }
 
 /* ---------- progress view ---------- */
@@ -1337,13 +1338,15 @@ $("r-save").addEventListener("click", async () => {
   const id = runEditId || `${date}-${Date.now().toString(36)}`;
   const data = { date, type: runType, km: Math.round(km * 100) / 100, sec: Math.round(dur), pace: Math.round(pace), elev: Math.round(nv("r-elev")), hr: Math.round(nv("r-hr")) || null, rpe: Math.min(10, Math.round(nv("r-rpe"))) || null, note: $("r-note").value.trim() };
   const edited = !!runEditId;
-  // images: new ones are queued for upload (a new name each time, so no stale copy is shown); replaced or removed ones are deleted
+  // images: new ones are queued for upload (a new name each time, so no stale copy is shown); replaced or removed ones are deleted.
+  // A copy of each new image goes to the running coach ("runimg"): it reads it the next morning, then the copy is dropped.
   const old = (state.runs.find(x => x.id === id) || {}).imgs || {}, imgs = {};
   for (const [k] of RIMG) {
     const v = runImgs[k];
-    if (v && v.data) { const name = `${id}-${k}-${Date.now().toString(36)}.jpg`; enqueue({ op: "img", coll: "img", id: name, data: v.data }); imgs[k] = name; }
+    if (v && v.data) { const name = `${id}-${k}-${Date.now().toString(36)}.jpg`; enqueue({ op: "img", coll: "img", id: name, data: v.data }); imgs[k] = name;
+      enqueue({ op: "put", coll: "runimg", id: name, data: { date, run: id, kind: k, status: "pending", image: v.data } }); }
     else if (v && v.name) imgs[k] = v.name;
-    if (old[k] && old[k] !== imgs[k]) enqueue({ op: "imgdel", coll: "img", id: old[k] });
+    if (old[k] && old[k] !== imgs[k]) { enqueue({ op: "imgdel", coll: "img", id: old[k] }); enqueue({ op: "del", coll: "runimg", id: old[k] }); }
   }
   if (Object.keys(imgs).length) data.imgs = imgs;
   put("runs", id, data);
@@ -1376,7 +1379,7 @@ $("r-list").addEventListener("click", e => {
 });
 // Deleting a run also deletes its images.
 function delRun(id) {
-  for (const n of Object.values((state.runs.find(x => x.id === id) || {}).imgs || {})) enqueue({ op: "imgdel", coll: "img", id: n });
+  for (const n of Object.values((state.runs.find(x => x.id === id) || {}).imgs || {})) { enqueue({ op: "imgdel", coll: "img", id: n }); enqueue({ op: "del", coll: "runimg", id: n }); }
   return del("runs", id);
 }
 $("r-cancel").addEventListener("click", () => { resetRunForm(); $("r-msg").textContent = "Modifica annullata."; $("r-msg").className = "savemsg"; runHint(); });
@@ -1451,9 +1454,12 @@ $("a-list").addEventListener("click", e => {
 });
 for (const id of ["w-arch", "n-arch"]) $(id).addEventListener("click", () => showTab("arch"));
 
-/* ---------- coach: morning report of the coach agent (coll "coach", id = date) ---------- */
-// The closed list of sources the coach may cite (the database refuses any other fonte_id).
+/* ---------- coach: morning reports of the coach (coll "coach") and of the running coach (coll "runcoach"), id = date ---------- */
+// The closed lists of sources the two coaches may cite (the database refuses any other fonte_id).
 const FONTI = {
+  "DANIELS": ["Jack Daniels · Daniels' Running Formula (Human Kinetics)", ""],
+  "PFITZINGER": ["Pete Pfitzinger e Scott Douglas · Advanced Marathoning (Human Kinetics)", ""],
+  "HANSONS": ["Luke Humphrey · Hansons Marathon Method (VeloPress)", ""],
   "ACSM-RT-2009": ["ACSM Position Stand · Progression Models in Resistance Training for Healthy Adults (2009)", "https://pubmed.ncbi.nlm.nih.gov/19204579/"],
   "ACSM-EX-2011": ["ACSM Position Stand · Quantity and Quality of Exercise (2011)", "https://pubmed.ncbi.nlm.nih.gov/21694556/"],
   "IOC-LOAD-2016": ["IOC consensus statement · Load in sport and risk of injury (2016)", "https://pubmed.ncbi.nlm.nih.gov/27535989/"],
@@ -1467,11 +1473,18 @@ const FONTI = {
 const srcTag = id => { if (!id) return ""; const f = FONTI[id]; return `<span class="src">${f && f[1] ? `<a href="${f[1]}" target="_blank" rel="noopener">${esc(id)}</a>` : esc(id)}</span>`; };
 const LVL = { riposo: "Riposo", leggero: "Leggero", moderato: "Moderato", intenso: "Intenso" };
 const BODY_L = { weight: ["Peso", "kg"], waist: ["Vita", "cm"], neck: ["Collo", "cm"], shoulders: ["Spalle", "cm"], chestc: ["Petto", "cm"], arm: ["Braccio", "cm"], thighc: ["Coscia", "cm"], calf: ["Polpaccio", "cm"], massa_grassa_pct: ["Massa grassa", "%"] };
-let coachDate = today();
+const DEC = { "sì": "Sì", "in parte": "In parte", "no": "No" };
+const fontiCard = (ids, title) => !ids.length ? "" : `<details class="card how"><summary>${title}</summary><ul class="prose" style="margin-top:8px">${ids.map(id => { const f = FONTI[id];
+  return `<li>${f && f[1] ? `<a href="${f[1]}" target="_blank" rel="noopener">${esc(f[0])}</a>` : esc(f ? f[0] : id)}</li>`; }).join("")}</ul></details>`;
+const usedFonti = (...lists) => [...new Set(lists.flat().map(x => typeof x === "string" ? x : x && x.fonte_id).filter(Boolean))];
+let coachDate = today(), coachWho = lsGet("olimpo-coachwho", "all");
+$("c-who").addEventListener("click", e => { const b = e.target.closest("button[data-who]"); if (!b) return; coachWho = b.dataset.who; lsSet("olimpo-coachwho", coachWho); renderCoach(); });
 function renderCoach() {
-  const r = state.coach.find(x => x.id === coachDate);
+  for (const b of $("c-who").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.who === coachWho));
   $("c-date").value = coachDate;
   $("c-datelbl").textContent = coachDate === today() ? "Oggi" : longDate(coachDate);
+  if (coachWho === "run") return renderRunCoach();
+  const r = state.coach.find(x => x.id === coachDate);
   if (!r) {
     $("c-headline").textContent = ""; $("c-today").textContent = "";
     $("c-body").innerHTML = `<div class="card"><p class="empty">${!state.coach.length ? "L'allenatore non è ancora attivo: parte dopo la configurazione del database (coach.sql). Da lì scrive il report ogni mattina verso le 5."
@@ -1487,6 +1500,10 @@ function renderCoach() {
   if (mg.length) out.push(`<div class="card prose"><h3>Come stai migliorando</h3><ul>${mg.map(m => `<li>${m.area ? `<b>${esc(m.area[0].toUpperCase() + m.area.slice(1))}</b> · ` : ""}${esc(m.testo || "")}</li>`).join("")}</ul></div>`);
   if (cs.length || rq.length) out.push(`<div class="card prose"><h3>Per oggi</h3><ul>${cs.map(x => `<li>${esc(x.testo || "")} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>
     ${rq.length ? `<div class="small muted">Chiesto al nutrizionista</div><ul>${rq.map(x => `<li><b>${esc(x.esigenza || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}</div>`);
+  const rr = arr(r.risposte_al_coach_corsa), rc = arr(r.richieste_al_coach_corsa);
+  if (rr.length || rc.length) out.push(`<div class="card prose"><h3>Con il coach di corsa</h3>
+    ${rr.length ? `<div class="small muted">Ha chiesto, la decisione sulla palestra</div><ul>${rr.map(x => `<li><b>${esc(x.richiesta || "")}</b> → ${esc(DEC[x.decisione] || x.decisione || "")}${x.cosa ? `: ${esc(x.cosa)}` : ""}${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}
+    ${rc.length ? `<div class="small muted">Chiesto al coach di corsa (risponde domani)</div><ul>${rc.map(x => `<li><b>${esc(x.richiesta || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}</div>`);
   if (pg.length) out.push(`<div class="card"><h3>Progressione in palestra</h3><div class="small muted">↑ = hai chiuso tutte le serie al massimo delle ripetizioni: si sale di carico.</div><div class="list coach-prog">${pg.map(p => `<div class="li"><div class="t"><b>${esc(p.esercizio || "")}</b><span>${esc(p.ultimo || "")}${p.obiettivo ? ` · obiettivo ${esc(p.obiettivo)}` : ""}</span></div><b${p.pronto ? ' class="ok"' : ""}>${p.pronto ? "↑ " : ""}${esc(p.proposta || "")}</b></div>`).join("")}</div></div>`);
   const sp = obj(r.sport), bp = sp.basket_partite, cc = sp.calcetto, ab = sp.allenamenti_basket_4sett;
   if (bp || cc || (ab && ab.totale)) out.push(`<div class="card"><h3>Basket e calcetto</h3><div class="list">
@@ -1513,12 +1530,62 @@ function renderCoach() {
     ${body.spalle_su_vita ? `<div class="li"><div class="t"><b>Spalle ÷ vita</b><span>obiettivo ${fk(body.spalle_su_vita.obiettivo)}</span></div><b>${fk(body.spalle_su_vita.ora)}</b></div>` : ""}</div></div>`);
   if (arr(r.prossimi_7).length) out.push(`<div class="card"><h3>Prossimi 7 giorni</h3><div class="list">${arr(r.prossimi_7).map(d => `<div class="li"><div class="t"><b>${d.date === today() ? "Oggi" : longDate(d.date)}</b><span>${esc(arr(d.eventi).join(" · ") || "—")}</span></div><span class="lvl ${esc(d.livello || "")}">${esc(LVL[d.livello] || d.livello || "")}</span></div>`).join("")}</div></div>`);
   if (r.motivazione) out.push(`<div class="card prose"><h3>Il punto dell'allenatore</h3><p>${esc(r.motivazione)}</p></div>`);
-  const used = [...new Set([...arr(r.fonti), ...av, ...cs, ...rq].map(x => typeof x === "string" ? x : x.fonte_id).filter(Boolean))];
-  if (used.length) out.push(`<details class="card how"><summary>Fonti usate oggi</summary><ul class="prose" style="margin-top:8px">${used.map(id => { const f = FONTI[id];
-      return `<li>${f && f[1] ? `<a href="${f[1]}" target="_blank" rel="noopener">${esc(f[0])}</a>` : esc(f ? f[0] : id)}</li>`; }).join("")}</ul></details>`);
+  out.push(fontiCard(usedFonti(arr(r.fonti), av, cs, rq, rr, rc), "Fonti usate oggi"));
   $("c-body").innerHTML = out.join("");
   if ($("c-weeks")) chart($("c-weeks"), c.settimane.map(w => ({ d: w.dal, x: ts(w.dal), y: w.carico || 0, tip: `dal ${ddmm(w.dal)} al ${ddmm(w.al)}` })), { bar: true, unit: "", fmt: v => String(Math.round(v)), label: "Carico", empty: "" });
   if ($("c-km")) chart($("c-km"), run.km_settimane.map(w => ({ d: w.dal, x: ts(w.dal), y: w.km || 0, tip: `settimana dal ${ddmm(w.dal)}` })), { bar: true, unit: "km", fmt: v => fk(r1(v)), label: "Km a settimana", empty: "" });
+}
+// The running coach (Milano, 4 April 2027): new runs, the 4h15 goal, paces of the period, calendar changes and the dialogue with the coach.
+const GOAL_LVL = { "in linea": "leggero", "da verificare": "moderato", "a rischio": "intenso" };
+function renderRunCoach() {
+  const r = state.runcoach.find(x => x.id === coachDate), co = state.coach.find(x => x.id === coachDate) || {};
+  if (!r) {
+    $("c-headline").textContent = ""; $("c-today").textContent = "";
+    $("c-body").innerHTML = `<div class="card"><p class="empty">${!state.runcoach.length ? "Il coach di corsa non è ancora attivo: parte dopo la configurazione del database (runcoach.sql). Da lì scrive il report ogni mattina verso le 3."
+      : coachDate >= today() ? "Il report del coach di corsa arriva ogni mattina verso le 3 (alle 4 con l'ora legale)." : "Nessun report salvato per questo giorno."}</p></div>`;
+    return;
+  }
+  const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  const g = obj(r.obiettivo), rt = obj(r.ritmi), u = r.ultima_corsa && typeof r.ultima_corsa === "object" ? r.ultima_corsa : null;
+  const wk = arr(r.settimane), cur = obj(wk[wk.length - 1]), streak = r.settimane_di_fila_con_una_corsa || 0, out = [];
+  const av = arr(r.avvisi), cs = arr(r.consigli), md = arr(r.modifiche_calendario), pr = arr(r.prossimi);
+  const rq = arr(r.richieste_all_allenatore), rs = arr(r.risposte_all_allenatore), coRes = arr(co.risposte_al_coach_corsa), coReq = arr(co.richieste_al_coach_corsa);
+  $("c-headline").textContent = r.headline || "";
+  $("c-today").textContent = `Maratona di Milano · 4 aprile 2027${r.giorni_alla_gara != null ? ` · mancano ${r.giorni_alla_gara} giorni` : ""}`;
+  if (av.length) out.push(`<div class="card prose adj"><h3>Avvisi</h3>${av.map(a => `<div class="warn-item ${esc(a.gravita || "")}">${esc(a.messaggio || "")} ${srcTag(a.fonte_id)}</div>`).join("")}</div>`);
+  out.push(`<div class="card prose"><h3>Obiettivo ${esc(g.tempo || "4h15")} · ${esc(g.ritmo || "6'03\"/km")}</h3><p>${g.stato ? `<span class="lvl ${GOAL_LVL[g.stato] || ""}">${esc(g.stato)}</span> ` : ""}${esc(g.nota || "")}</p></div>`);
+  if (u) {
+    const bene = arr(u.bene);
+    out.push(`<div class="card prose"><h3>Ultima corsa${u.titolo ? ` · ${esc(u.titolo)}` : ""}</h3>
+      <div class="small muted">${[u.date && longDate(u.date), u.km != null && fk(r1(u.km)) + " km", u.durata, u.ritmo && u.ritmo + "/km"].filter(Boolean).map(esc).join(" · ")}</div>
+      ${u.giudizio ? `<p>${esc(u.giudizio)}</p>` : ""}
+      ${bene.length ? `<div class="small muted">Bene</div><ul>${bene.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${u.da_correggere ? `<div class="warn-item media"><b>Da correggere:</b> ${esc(u.da_correggere)}</div>` : ""}
+      ${u.sensore ? `<div class="small muted" style="margin-top:6px">Battito: ${esc(u.sensore)}</div>` : ""}</div>`);
+  }
+  out.push(`<div class="tiles four">${[
+    ["Km", cur.km != null ? fk(cur.km) : "—", "questa settimana", false],
+    ["Corse", cur.corse ?? "—", "questa settimana", false],
+    ["Una corsa", streak, streak === 1 ? "settimana di fila" : "settimane di fila", streak >= 2],
+    ["Alla gara", r.giorni_alla_gara ?? "—", "giorni", false]
+  ].map(([k, v, d, off]) => `<div class="tile${off ? " off" : ""}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join("")}</div>`);
+  if (wk.some(w => w && w.km)) out.push(`<div class="card"><h3>Km a settimana</h3><div class="small muted">Da lunedì a domenica; l'ultima barra è la settimana in corso. Tre corse a settimana reggono le 4h15.</div><div class="chart" id="rc-km"></div></div>`);
+  if (rt.F || rt.RM || rt.S) out.push(`<div class="card"><h3>I tuoi ritmi${rt.periodo ? ` · ${esc(rt.periodo)}` : ""}</h3><div class="list">
+    ${[["F", "Facile e lunghi"], ["RM", "Ritmo maratona"], ["S", "Soglia"]].filter(([k]) => rt[k]).map(([k, l]) => `<div class="li"><div class="t"><b>${k} · ${l}</b></div><b>${esc(rt[k])}/km</b></div>`).join("")}</div>
+    <div class="small muted">Il ritmo gara (6'03") si raggiunge per gradini: non è il ritmo a cui allenarsi da subito.</div></div>`);
+  if (cs.length || pr.length) out.push(`<div class="card prose"><h3>Prossimi giorni</h3>${cs.length ? `<ul>${cs.map(x => `<li>${esc(x.testo || "")} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}
+    ${pr.length ? `<div class="list">${pr.map(p => `<div class="li"><div class="t"><b>${p.date === today() ? "Oggi" : longDate(p.date)}</b><span>${esc(p.titolo || "")}</span></div></div>`).join("")}</div>` : ""}</div>`);
+  if (md.length) out.push(`<div class="card prose"><h3>Calendario aggiornato</h3><ul>${md.map(m => `<li><b>${m.date ? esc(longDate(m.date)) + " · " : ""}${esc(m.prima || "")}${m.dopo ? ` → ${esc(m.dopo)}` : ""}</b>${m.motivo ? ` · ${esc(m.motivo)}` : ""}</li>`).join("")}</ul></div>`);
+  if (rq.length || coRes.length || rs.length || coReq.length) out.push(`<div class="card prose"><h3>Con l'allenatore</h3>
+    ${rq.length ? `<div class="small muted">Chiesto all'allenatore</div><ul>${rq.map(x => `<li><b>${esc(x.richiesta || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}
+    ${coRes.length ? `<div class="small muted">L'allenatore risponde</div><ul>${coRes.map(x => `<li><b>${esc(DEC[x.decisione] || x.decisione || "")}</b>${x.cosa ? `: ${esc(x.cosa)}` : ""}${x.motivo ? ` · ${esc(x.motivo)}` : ""} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>`
+      : rq.length && coachDate === today() ? `<div class="small muted">L'allenatore risponde nel suo report di stamattina, un'ora dopo.</div>` : ""}
+    ${rs.length ? `<div class="small muted">Risposte alle richieste dell'allenatore</div><ul>${rs.map(x => `<li><b>${esc(x.richiesta || "")}</b> → ${esc(x.risposta || "")} ${srcTag(x.fonte_id)}</li>`).join("")}</ul>` : ""}
+    ${coReq.length ? `<div class="small muted">L'allenatore chiede (risposta domani)</div><ul>${coReq.map(x => `<li><b>${esc(x.richiesta || "")}</b>${x.motivo ? ` · ${esc(x.motivo)}` : ""}</li>`).join("")}</ul>` : ""}</div>`);
+  if (r.motivazione) out.push(`<div class="card prose"><h3>Il punto del coach di corsa</h3><p>${esc(r.motivazione)}</p></div>`);
+  out.push(fontiCard(usedFonti(arr(r.fonti), av, cs, rq, rs), "Fonti usate oggi"));
+  $("c-body").innerHTML = out.join("");
+  if ($("rc-km")) chart($("rc-km"), wk.map(w => ({ d: w.dal, x: ts(w.dal), y: w.km || 0, tip: `${w.corse || 0} ${w.corse === 1 ? "corsa" : "corse"}${w.lungo ? ` · lungo ${fk(w.lungo)} km` : ""}${w.in_corso ? " · in corso" : ""}` })), { bar: true, unit: "km", fmt: v => fk(r1(v)), label: "Km a settimana", empty: "" });
 }
 $("c-prev").addEventListener("click", () => { coachDate = shiftDate(coachDate, -1); renderCoach(); });
 $("c-next").addEventListener("click", () => { coachDate = shiftDate(coachDate, 1); renderCoach(); });
@@ -1533,7 +1600,7 @@ function showTab(t) {
   document.querySelector(".tabbar .in").style.setProperty("--i", Math.max(0, tabs.findIndex(b => b.dataset.tab === key)));
   for (const id of Object.keys(TITLES)) $("v-" + id).hidden = id !== t;
   $("h-title").textContent = TITLES[t];
-  if (t === "work") renderHeader(); else $("h-eyebrow").textContent = { plan: "Giovedì e sabato", food: "Piano del giorno", notes: "Com'è andata", run: "Verso Roma · 14 marzo", body: "Misure e massa grassa", prog: "Scheda A + B", arch: "Tutto quello che hai inserito", coach: "Il tuo allenatore" }[t] || "";
+  if (t === "work") renderHeader(); else $("h-eyebrow").textContent = { plan: "Giovedì e sabato", food: "Piano del giorno", notes: "Com'è andata", run: "Verso Milano · 4 aprile", body: "Misure e massa grassa", prog: "Scheda A + B", arch: "Tutto quello che hai inserito", coach: "Allenatore e coach di corsa" }[t] || "";
   document.querySelector(".hdr").classList.toggle("compact", t !== "work");
   if (t === "prog") renderProg(); if (t === "body") renderBody();
   if (t === "food") { foodDate = today(); renderFood(); }

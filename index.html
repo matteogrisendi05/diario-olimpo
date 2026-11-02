@@ -59,7 +59,7 @@
       <button class="btn ghost" id="w-new-add">+ Aggiungi alla seduta</button>
     </div>
     <div class="savemsg" id="w-msg">Tocca ✓ alla fine di ogni serie: salvo tutto da solo.</div>
-    <button class="card linkcard" id="w-plan"><span><b>Scheda completa e blocchi</b><span class="small muted">Esercizi, progressione e i tre blocchi fino a Roma</span></span><span aria-hidden="true">›</span></button>
+    <button class="card linkcard" id="w-plan"><span><b>Scheda completa e blocchi</b><span class="small muted">Esercizi, progressione e i tre blocchi fino a Milano</span></span><span aria-hidden="true">›</span></button>
     <button class="card linkcard" id="w-arch"><span><b>Archivio</b><span class="small muted">Tutto quello che hai inserito, giorno per giorno: rivedi e correggi</span></span><span aria-hidden="true">›</span></button>
   </section>
 
@@ -266,7 +266,7 @@
       <p>Nelle settimane di scarico della corsa e prima dei lunghi da 28 km in su, togli una serie a ogni esercizio. Saltare le gambe va benissimo; saltare il lungo no.</p>
     </div>
     <div class="card">
-      <h3>I tre blocchi fino a Roma</h3>
+      <h3>I tre blocchi fino a Milano</h3>
       <div class="blocks" id="s-blocks"></div>
       <p class="small muted" id="s-blocknote" style="margin:0"></p>
     </div>
@@ -313,9 +313,13 @@
     <button class="btn" id="a-more" hidden>Mostra i giorni precedenti</button>
   </section>
 
-  <!-- COACH: report of the morning coach agent (coll "coach", id = date) -->
+  <!-- COACH: morning reports of the coach (coll "coach") and of the running coach (coll "runcoach"), id = date -->
   <section class="view" id="v-coach" hidden>
     <div class="today">
+      <div class="seg" id="c-who" role="group" aria-label="Quale coach">
+        <button data-who="all" aria-pressed="true">Allenatore</button>
+        <button data-who="run" aria-pressed="false">Corsa</button>
+      </div>
       <div class="trow">
         <button class="lnk" id="c-prev">‹ Prima</button>
         <label class="datepill"><span id="c-datelbl">Oggi</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 4l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><input type="date" id="c-date" aria-label="Giorno del report"></label>
