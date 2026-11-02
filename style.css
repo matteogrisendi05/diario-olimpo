@@ -254,6 +254,7 @@ select option{background:var(--solid);color:var(--ink)}
 .li img.thumb{width:48px;height:48px;border-radius:10px}
 .photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .photo-actions .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
+.meal .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge);min-height:44px;font-size:.92rem}
 .li .with-thumb{display:flex;gap:10px;align-items:center;min-width:0}
 /* run images: heart-rate chart, zones and pace per km */
 .run-imgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}

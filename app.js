@@ -201,7 +201,7 @@ async function pull() {
   const from = recentFrom();
   // Photo images are not downloaded back: the phone already has its thumbnails.
   const { data, error } = await fetchAll(() => sb.from("docs").select("coll,id,data").neq("coll", "photo").or(`coll.not.in.(${RECENT.join(",")}),id.gte.${from}`).order("coll").order("id"));
-  const ph = await fetchAll(() => sb.from("docs").select("coll,id,date:data->>date,time:data->>time,note:data->>note,status:data->>status,text_only:data->text_only,items:data->items,kcal:data->kcal,protein:data->protein,carbs:data->carbs,fat:data->fat,ai_note:data->>ai_note").eq("coll", "photo").order("coll").order("id"));
+  const ph = await fetchAll(() => sb.from("docs").select("coll,id,date:data->>date,time:data->>time,note:data->>note,status:data->>status,text_only:data->text_only,meal:data->>meal,meal_i:data->meal_i,items:data->items,kcal:data->kcal,protein:data->protein,carbs:data->carbs,fat:data->fat,ai_note:data->>ai_note").eq("coll", "photo").order("coll").order("id"));
   if (error) { console.warn("pull", error); return; }
   lastPull = Date.now();
   if (!ph.error) for (const r of ph.data) { const { coll, id, ...rest } = r; data.push({ coll, id, data: rest }); }
@@ -916,15 +916,20 @@ function renderFood() {
     return `<div class="tile${off ? " off" : ""}"><div class="k">${label}</div><div class="v">${Math.round(val)}</div><div class="d">su ${Math.round(goal)}${unit}</div></div>`;
   };
   $("f-tiles").innerHTML = tile("kcal", "kcal", "") + tile("Prot.", "protein", " g") + tile("Carbo", "carbs", " g") + tile("Grassi", "fat", " g");
+  const ph = dayPhotos(foodDate), thumbs = getThumbs();
   $("f-meals").innerHTML = plan.meals.map((m, mi) => {
     const ml = entryFor(log.meals, mi, m.name || ""), st = ml.status || "";
-    return `<article class="ex meal${st === "ok" ? " complete" : ""}">
+    const mp = ph.filter(p => photoMealIdx(p, plan.meals) === mi), msg = mealMsg && mealMsg.i === mi && mealMsg.date === foodDate ? mealMsg : null;
+    return `<article class="ex meal${st === "ok" ? " complete" : ""}" data-mi="${mi}">
     <div class="ex-top"><div><div class="eyebrow">${esc(m.time || "")}</div><h3>${esc(m.name || "Pasto")}</h3></div><span class="cnt">${Math.round(m.kcal || 0)} kcal</span></div>
     ${m.note ? `<p class="note">${esc(m.note)}</p>` : ""}
     <div class="list">${(m.items || []).map(i => `<div class="li"><div class="t"><b>${esc(i.food || "")}${i.nuovo ? ' <span class="new">nuovo</span>' : ""}</b>${i.note ? `<span>${esc(i.note)}</span>` : ""}</div><b>${esc(i.qty || (i.g != null ? i.g + " g" : ""))}</b></div>`).join("")}</div>
     <div class="target">P ${Math.round(m.protein || 0)} g · C ${Math.round(m.carbs || 0)} g · G ${Math.round(m.fat || 0)} g</div>
     <div class="seg three" role="group" aria-label="Com'è andato questo pasto">${ST.map(([k, l]) => `<button data-meal="${mi}" data-st="${k}" aria-pressed="${st === k}">${l}</button>`).join("")}</div>
     ${st === "diff" ? `<textarea class="eaten" data-meal="${mi}" rows="2" placeholder="Cosa hai mangiato invece? es. 2 pizze margherita e una birra media">${esc(ml.text || "")}</textarea>` : ""}
+    ${mp.length ? `<div class="list">${mp.map(p => photoRow(p, thumbs)).join("")}</div>` : ""}
+    ${msg ? `<div class="savemsg ${msg.cls || ""}">${esc(msg.text)}</div>` : ""}
+    <button class="btn ghost photo-btn" data-mphoto="${mi}">${CAM}${mp.length ? "Un'altra foto" : "Foto del pasto"}</button>
   </article>`;
   }).join("");
   const tips = plan.tips || [];
@@ -941,7 +946,7 @@ $("f-meals").addEventListener("click", e => {
   if (st === "diff") setTimeout(() => { const t = document.querySelector(`textarea[data-meal="${mi}"]`); if (t) t.focus(); }, 50);
 });
 const saveMealText = (t, date) => saveIntake(cur => setEntry(cur.meals, t.dataset.meal, mealName(t.dataset.meal), { status: "diff", text: t.value.trim() }), date, true);
-$("f-meals").addEventListener("input", e => { const t = e.target.closest("textarea[data-meal]"); if (t) { const d = foodDate; saveTextSoon(() => saveMealText(t, d)); } });
+$("f-meals").addEventListener("input", e => { const t = e.target.closest("textarea[data-meal]"); if (t) { const d = foodDate; saveTextSoon(() => saveMealText(t, d)); } else if (e.target.id === "f-ph-edit") phDraft = e.target.value; });
 $("f-meals").addEventListener("change", e => { const t = e.target.closest("textarea[data-meal]"); if (t) saveTextNow(() => saveMealText(t, foodDate)); });
 const saveExtra = date => saveIntake(cur => { cur.extras = $("f-extra").value.trim(); }, date, true);
 $("f-extra").addEventListener("input", () => { const d = foodDate; saveTextSoon(() => saveExtra(d)); });
@@ -975,24 +980,50 @@ function shrinkImage(file, max, quality) {
     img.src = url;
   });
 }
-function photoMsg(text, cls) { const m = $("f-photo-msg"); m.hidden = !text; m.textContent = text || ""; m.className = "savemsg" + (cls ? " " + cls : ""); }
+// Messages about a meal's photos show inside that meal card (mi = its position), the others in "Cosa hai mangiato".
+let mealMsg = null;
+function photoMsg(text, cls, mi) {
+  const m = $("f-photo-msg"), here = mi == null;
+  m.hidden = !(text && here); m.textContent = here ? text || "" : ""; m.className = "savemsg" + (cls ? " " + cls : "");
+  mealMsg = !here && text ? { i: mi, date: foodDate, text, cls } : null;
+}
 // The description is kept as a draft while typing, so it survives a reload until it is saved.
 const NOTE_KEY = "olimpo-fnote";
 $("f-photo-note").value = lsGet(NOTE_KEY, "");
 $("f-photo-note").addEventListener("input", e => lsSet(NOTE_KEY, e.target.value));
 const clearNote = () => { $("f-photo-note").value = ""; lsSet(NOTE_KEY, ""); };
 const nowHM = () => { const d = new Date(); return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+// Shrinks the picture, keeps its thumbnail on this phone and queues the document for the morning agent.
+async function addPhoto(file, date, fields) {
+  const image = await shrinkImage(file, 1024, 0.75), thumb = await shrinkImage(file, 200, 0.7);
+  const id = `${date}-${Date.now().toString(36)}`;
+  keepThumb(id, thumb);
+  put("photo", id, { date, time: nowHM(), ...fields, status: "pending", image: image.split(",")[1] });
+}
 $("f-photo").addEventListener("change", async e => {
   const file = e.target.files && e.target.files[0]; e.target.value = ""; if (!file) return;
   photoMsg("Salvo la foto…");
   try {
-    const image = await shrinkImage(file, 1024, 0.75), thumb = await shrinkImage(file, 200, 0.7);
-    const id = `${foodDate}-${Date.now().toString(36)}`;
-    keepThumb(id, thumb);
-    put("photo", id, { date: foodDate, time: nowHM(), note: $("f-photo-note").value.trim(), status: "pending", image: image.split(",")[1] });
+    await addPhoto(file, foodDate, { note: $("f-photo-note").value.trim() });
     clearNote();
     photoMsg(navigator.onLine ? "Foto salvata. Il nutrizionista la analizza domattina alle 6." : "Foto salvata sul telefono: parte appena torna internet.", "ok");
   } catch (x) { photoMsg("Non sono riuscito a leggere la foto. Riprova.", "err"); }
+});
+// Photo of one meal of the plan: it carries the meal's name (how the agent matches it) and position,
+// and the agent counts that meal as the photo instead of the plan.
+let mealPhoto = null;
+$("f-meals").addEventListener("click", e => {
+  const b = e.target.closest("button[data-mphoto]"); if (!b) return;
+  const i = Number(b.dataset.mphoto);
+  mealPhoto = { i, name: mealName(i), date: foodDate };
+  $("f-meal-photo").click();
+});
+$("f-meal-photo").addEventListener("change", async e => {
+  const file = e.target.files && e.target.files[0], mp = mealPhoto; e.target.value = ""; if (!file || !mp) return;
+  try {
+    photoMsg("");
+    await addPhoto(file, mp.date, { note: "", meal: mp.name, meal_i: mp.i });
+  } catch (x) { photoMsg("Non sono riuscito a leggere la foto. Riprova.", "err", mp.i); renderFood(); }
 });
 // A text-only entry is a "photo" document without the image: same list, same analysis by the agent.
 $("f-text-save").addEventListener("click", () => {
@@ -1015,8 +1046,10 @@ function patchPhoto(id, fields) {
 }
 let phEdit = null, phDraft = null;   // entry being edited and its unsaved text (kept across re-renders)
 $("f-photo-list").addEventListener("input", e => { if (e.target.id === "f-ph-edit") phDraft = e.target.value; });
-$("f-photo-list").addEventListener("click", e => {
+// Edit and delete of a photo row, both in "Cosa hai mangiato" and inside the meal cards.
+function onPhotoClick(e) {
   const b = e.target.closest("button"); if (!b) return;
+  const card = b.closest(".meal"), mi = card ? Number(card.dataset.mi) : undefined;
   if (b.dataset.phdel) return armDelete(b, async () => { const id = b.dataset.phdel, t = getThumbs(); if (t[id]) { delete t[id]; lsSet(THUMBS_KEY, t); } del("photo", id); });
   if (b.dataset.phedit) { phEdit = b.dataset.phedit; phDraft = null; renderFood(); const t = $("f-ph-edit"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } return; }
   if (b.dataset.phcancel) { phEdit = phDraft = null; return renderFood(); }
@@ -1025,12 +1058,35 @@ $("f-photo-list").addEventListener("click", e => {
     if (p && p.text_only && !t.value.trim()) { photoMsg("Il testo non può essere vuoto: se vuoi toglierlo usa Elimina.", "err"); return; }
     phEdit = phDraft = null;
     const ok = patchPhoto(b.dataset.phsave, { note: t.value.trim() });
-    photoMsg(ok ? "Testo aggiornato." : "Il nutrizionista l'ha già analizzato: non si può più modificare.", ok ? "ok" : "err");
+    photoMsg(ok ? "Testo aggiornato." : "Il nutrizionista l'ha già analizzato: non si può più modificare.", ok ? "ok" : "err", mi);
     renderFood();
   }
-});
+}
+$("f-photo-list").addEventListener("click", onPhotoClick);
+$("f-meals").addEventListener("click", onPhotoClick);
+const CAM = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const dayPhotos = date => state.photo.filter(p => p.date === date).sort((a, b) => a.id < b.id ? -1 : 1);
+// The meal of the plan a photo belongs to (-1 = none): by name, as the agent reads it; by position when two meals share the name.
+function photoMealIdx(p, meals) {
+  if (!p.meal) return -1;
+  if (meals[p.meal_i] && meals[p.meal_i].name === p.meal) return p.meal_i;
+  return meals.findIndex(m => m.name === p.meal);
+}
+function photoRow(p, thumbs) {
+  const isDone = p.status === "done", kind = p.text_only ? "Testo" : "Foto";
+  const pic = thumbs[p.id] ? `<img class="thumb" src="${thumbs[p.id]}" alt="">` : p.text_only ? `<span class="thumb txt" aria-hidden="true">✎</span>` : "";
+  if (p.id === phEdit) return `<div class="li ph-edit"><textarea class="eaten" id="f-ph-edit" rows="3" placeholder="Dettagli per il nutrizionista, es. porzione grande, 2 cucchiai d'olio">${esc(phDraft ?? p.note ?? "")}</textarea>
+    <div class="acts"><button class="lnk" data-phsave="${p.id}">Salva</button><button class="lnk" data-phcancel="1">Annulla</button></div></div>`;
+  return `<div class="li"><div class="with-thumb">${pic}<div class="t">
+    <b>${esc(p.time || "")} · ${kind} · ${isDone ? Math.round(p.kcal || 0) + " kcal" : "in attesa"}</b>
+    ${p.note ? `<span>${isDone ? "Tu: " : ""}${esc(p.note)}</span>` : isDone ? "" : `<span>Il nutrizionista la analizza domattina alle 6.</span>`}
+    ${isDone ? `<span>${(p.items || []).map(i => `${esc(i.food)} ${Math.round(i.grams)} g`).join(", ")}</span>` : ""}
+    ${isDone && p.ai_note ? `<span>${esc(p.ai_note)}</span>` : ""}
+  </div></div><div class="acts">${isDone ? "" : `<button class="lnk" data-phedit="${p.id}">${p.note || p.text_only ? "Modifica" : "Dettagli"}</button>`}<button class="lnk danger" data-phdel="${p.id}">Elimina</button></div></div>`;
+}
+// The day's total counts every photo; the list here shows only those not attached to a meal of the plan.
 function renderPhotos(date, plan) {
-  const thumbs = getThumbs(), ph = state.photo.filter(p => p.date === date).sort((a, b) => a.id < b.id ? -1 : 1);
+  const thumbs = getThumbs(), ph = dayPhotos(date), meals = plan && Array.isArray(plan.meals) ? plan.meals : [];
   const done = ph.filter(p => p.status === "done");
   const t = done.reduce((s, p) => ({ kcal: s.kcal + (p.kcal || 0), protein: s.protein + (p.protein || 0), carbs: s.carbs + (p.carbs || 0), fat: s.fat + (p.fat || 0) }), { kcal: 0, protein: 0, carbs: 0, fat: 0 });
   const goal = plan && plan.targets ? plan.targets.kcal : 0, waiting = ph.length - done.length;
@@ -1038,18 +1094,7 @@ function renderPhotos(date, plan) {
     (done.length ? `Già analizzato: ${Math.round(t.kcal)} kcal${goal ? ` su ${Math.round(goal)}` : ""} · P ${Math.round(t.protein)} g · C ${Math.round(t.carbs)} g · G ${Math.round(t.fat)} g` : "")
     + (waiting ? `${done.length ? " · " : ""}${waiting} in attesa di analisi (domattina)` : "");
   if (phEdit && !ph.some(p => p.id === phEdit && p.status !== "done")) phEdit = phDraft = null;
-  $("f-photo-list").innerHTML = ph.map(p => {
-    const isDone = p.status === "done", kind = p.text_only ? "Testo" : "Foto";
-    const pic = thumbs[p.id] ? `<img class="thumb" src="${thumbs[p.id]}" alt="">` : p.text_only ? `<span class="thumb txt" aria-hidden="true">✎</span>` : "";
-    if (p.id === phEdit) return `<div class="li ph-edit"><textarea class="eaten" id="f-ph-edit" rows="3">${esc(phDraft ?? p.note ?? "")}</textarea>
-      <div class="acts"><button class="lnk" data-phsave="${p.id}">Salva</button><button class="lnk" data-phcancel="1">Annulla</button></div></div>`;
-    return `<div class="li"><div class="with-thumb">${pic}<div class="t">
-      <b>${esc(p.time || "")} · ${kind} · ${isDone ? Math.round(p.kcal || 0) + " kcal" : "in attesa"}</b>
-      ${p.note ? `<span>${isDone ? "Tu: " : ""}${esc(p.note)}</span>` : isDone ? "" : `<span>Il nutrizionista la analizza domattina alle 6.</span>`}
-      ${isDone ? `<span>${(p.items || []).map(i => `${esc(i.food)} ${Math.round(i.grams)} g`).join(", ")}</span>` : ""}
-      ${isDone && p.ai_note ? `<span>${esc(p.ai_note)}</span>` : ""}
-    </div></div><div class="acts">${isDone ? "" : `<button class="lnk" data-phedit="${p.id}">Modifica</button>`}<button class="lnk danger" data-phdel="${p.id}">Elimina</button></div></div>`;
-  }).join("");
+  $("f-photo-list").innerHTML = ph.filter(p => photoMealIdx(p, meals) < 0).map(p => photoRow(p, thumbs)).join("");
 }
 
 const PF = { excluded: "p-excl", likes: "p-pref", breakfast: "p-bk", lunch: "p-lunch", lunch_where: "p-where", notes: "p-notes" };
@@ -1378,7 +1423,7 @@ function archEntries() {
     }
   }
   for (const p of state.photo)
-    add(p.date, "food", archItem(p.text_only ? "Cibo (testo)" : "Foto del cibo", `${esc(p.time || "")} · ${p.status === "done" ? Math.round(p.kcal || 0) + " kcal" : "in attesa di analisi"}`, p.status === "done" ? esc(cut((p.items || []).map(i => `${i.food} ${Math.round(i.grams)} g`).join(", "), 80)) : esc(cut(p.note || "", 80)), `food:${p.date}`, `data-adel="photo:${p.id}"`));
+    add(p.date, "food", archItem(p.text_only ? "Cibo (testo)" : "Foto del cibo", `${esc(p.time || "")}${p.meal ? " · " + esc(p.meal) : ""} · ${p.status === "done" ? Math.round(p.kcal || 0) + " kcal" : "in attesa di analisi"}`, p.status === "done" ? esc(cut((p.items || []).map(i => `${i.food} ${Math.round(i.grams)} g`).join(", "), 80)) : esc(cut(p.note || "", 80)), `food:${p.date}`, `data-adel="photo:${p.id}"`));
   return days;
 }
 function renderArch() {
