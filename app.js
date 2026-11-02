@@ -526,18 +526,23 @@ $("w-list").addEventListener("click", e => {
     dirty = true; keepDraft(); rerenderCard(exId); if (row.done) scheduleSave(); return;
   }
   if (b.dataset.chk) {
-    const i = +b.dataset.i, row = rows[i];
+    const i = +b.dataset.i, row = rows[i], wasComplete = rows.filter(x => x.done).length >= ex.s;
     row.done = !row.done;
     if (row.done && isTime(exId) && !(parseSec(row.sec) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.sec = secStr(prev ? prev.sec : TIME_LO); }
     else if (row.done && !isTime(exId) && !(num(row.reps) > 0)) { const sg = suggest(ex, draft.date); const prev = sg.last && sg.last.sets[i]; row.reps = String(prev ? prev.reps : ex.lo); }
     dirty = true; keepDraft(); rerenderCard(exId); scheduleSave();
-    if (row.done) startTimer(restOf(ex), rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]);
+    if (row.done) { cheer(exId, i, !wasComplete && rows.filter(x => x.done).length >= ex.s); startTimer(restOf(ex), rows.every(x => x.done) ? "Prossimo esercizio" : "Recupero · " + ex.n.split(" ")[0]); }
     return;
   }
   if (b.dataset.add) rows.push({ kg: rows.length ? rows[rows.length - 1].kg : fk(ex.start), reps: "", sec: "", done: false });
   if (b.dataset.rm && rows.length > 1) rows.pop();
   dirty = true; keepDraft(); rerenderCard(exId); scheduleSave();
 });
+// Visual only: a "pop" on the set just ticked, and a flash on the card when its last planned set is done.
+function cheer(id, i, cardDone) {
+  const c = document.querySelector(`.chk[data-chk="${id}"][data-i="${i}"]`); if (c) c.classList.add("pop");
+  const card = $("ex-" + id); if (cardDone && card) card.classList.add("cheer");
+}
 // Add an exercise to this session: one you used before (chips) or a new one (name + measure).
 const slug = s => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40);
 function addToSession(id) {
@@ -575,15 +580,16 @@ $("w-b").addEventListener("click", () => switchTo(draft.date, "B"));
 $("w-date").addEventListener("change", e => { if (e.target.value) switchTo(e.target.value, defaultPlan(e.target.value)); });
 
 /* ---------- rest timer ---------- */
-let tEnd = 0, tInt = null, wake = null;
+let tEnd = 0, tTot = 0, tInt = null, wake = null;   // tTot: length of the rest, for the bar that empties in the capsule
 function startTimer(sec, what) {
-  tEnd = Date.now() + sec * 1000; $("t-what").textContent = what; $("timer").hidden = false; $("timer").classList.remove("go"); $("t-say").textContent = ""; calmCheck();
+  tEnd = Date.now() + sec * 1000; tTot = sec * 1000; $("t-what").textContent = what; $("timer").hidden = false; $("timer").classList.remove("go"); $("t-say").textContent = ""; calmCheck();
   clearInterval(tInt); tInt = setInterval(tick, 250); tick();
   try { if (navigator.wakeLock && !wake) navigator.wakeLock.request("screen").then(w => { wake = w; w.addEventListener("release", () => wake = null); }).catch(() => {}); } catch (e) {}
 }
 function tick() {
   const left = Math.max(0, Math.ceil((tEnd - Date.now()) / 1000));
   $("t-left").textContent = left ? mmss(left) : "Vai!";
+  $("timer").style.setProperty("--p", tTot ? Math.max(0, (tEnd - Date.now()) / tTot) : 0);
   // VoiceOver hears the start and "Vai!", not every second
   const say = left ? `Recupero di ${mmss(left)}` : "Vai!";
   if (!left ? $("t-say").textContent !== "Vai!" : !$("t-say").textContent) $("t-say").textContent = say;
@@ -603,7 +609,7 @@ function calmCheck() {
 }
 for (const ev of ["pointerdown", "keydown", "scroll"]) window.addEventListener(ev, calmCheck, { passive: true });
 calmCheck();
-$("t-add").addEventListener("click", () => { tEnd = Math.max(tEnd, Date.now()) + 30000; $("timer").classList.remove("go"); tick(); });
+$("t-add").addEventListener("click", () => { tEnd = Math.max(tEnd, Date.now()) + 30000; tTot = Math.max(tTot, tEnd - Date.now()); $("timer").classList.remove("go"); tick(); });
 
 /* ---------- charts ---------- */
 function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
@@ -1596,6 +1602,7 @@ const TITLES = { work: "Diario Olimpo", run: "Corsa", food: "Cibo", coach: "Coac
 function showTab(t) {
   const tabs = [...document.querySelectorAll(".tabbar button")];
   const key = t === "plan" ? "work" : t === "arch" ? "notes" : t;   // the full plan lives under Palestra, the archive under Note
+  document.body.dataset.tab = key;   // each section has its own colour (style.css)
   for (const b of tabs) b.setAttribute("aria-selected", b.dataset.tab === key);
   document.querySelector(".tabbar .in").style.setProperty("--i", Math.max(0, tabs.findIndex(b => b.dataset.tab === key)));
   for (const id of Object.keys(TITLES)) $("v-" + id).hidden = id !== t;
