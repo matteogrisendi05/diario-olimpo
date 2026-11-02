@@ -135,7 +135,7 @@ async function sendPatch(o) {
   return sb.from("docs").update({ data: { ...cur.data[0].data, ...o.data }, updated_at: new Date().toISOString() })
     .match({ user_id: uid, coll: o.coll, id: o.id }).eq("data->>status", "pending");
 }
-// Run images (heart-rate chart and zones) are files in the private Storage bucket, under <user id>/<name>.
+// Run images (heart-rate chart, zones and pace per km) are files in the private Storage bucket, under <user id>/<name>.
 // They travel in the outbox like any change ("img" upload / "imgdel" removal), so they also work offline.
 const BUCKET = "run-images";
 const b64ToBlob = b64 => { const bin = atob(b64), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: "image/jpeg" }); };
@@ -1237,7 +1237,7 @@ function renderRun() {
   runHint();
 }
 // Images of the run being entered or edited: kind -> {name} (already saved) | {data} (new, base64) | null (removed).
-const RIMG = [["hr", "Grafico del battito"], ["zones", "Zone di battito"]];
+const RIMG = [["hr", "Grafico del battito"], ["zones", "Zone di battito"], ["splits", "Ritmo per km"]];
 let runImgs = {}, runImgKind = null;
 function renderRunImgs() {
   $("r-imgs").innerHTML = RIMG.map(([k, l]) => { const v = runImgs[k];

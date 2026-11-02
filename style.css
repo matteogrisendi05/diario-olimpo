@@ -255,9 +255,9 @@ select option{background:var(--solid);color:var(--ink)}
 .photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .photo-actions .btn.ghost{background:var(--sunk);color:var(--ink);box-shadow:var(--glass-edge)}
 .li .with-thumb{display:flex;gap:10px;align-items:center;min-width:0}
-/* run images: heart-rate chart and zones */
-.run-imgs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
-.run-img{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+/* run images: heart-rate chart, zones and pace per km */
+.run-imgs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:6px}
+.run-img{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:0}
 .run-img .slot{min-height:92px;border-radius:12px;border:1px dashed var(--line);background:var(--sunk);color:var(--muted);font:600 .82rem var(--f-body);text-transform:none;letter-spacing:0;cursor:pointer;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;overflow:hidden}
 .run-img .slot img{width:100%;height:92px;object-fit:cover;border-radius:10px}
 .run-img .lnk{min-height:36px;align-self:center}
